@@ -1,8 +1,8 @@
-use std::env::VarError;
-use std::path::Path;
 use std::borrow::Cow;
-use std::fmt;
+use std::env::VarError;
 use std::error::Error;
+use std::fmt;
+use std::path::Path;
 
 pub fn full_with_context<SI: ?Sized, CO, C, E, P, HD>(input: &SI, home_dir: HD, context: C) -> Result<Cow<str>, LookupError<E>>
     where SI: AsRef<str>,
@@ -12,10 +12,12 @@ pub fn full_with_context<SI: ?Sized, CO, C, E, P, HD>(input: &SI, home_dir: HD, 
           HD: FnMut() -> Option<P>
 {
     env_with_context(input, context).map(|r| match r {
+        // variable expansion did not modify the original string, so we can apply tilde expansion
+        // directly
         Cow::Borrowed(s) => tilde_with_context(s, home_dir),
         Cow::Owned(s) => {
-            // if the original string did not started with a tilde but the processed one did,
-            // then it was contained in the variable and should not be expanded
+            // if the original string does not start with a tilde but the processed one does,
+            // then the tilde is contained in one of variables and should not be expanded
             if !input.as_ref().starts_with("~") && s.starts_with("~") {
                 // return as is
                 s.into()
@@ -31,7 +33,23 @@ pub fn full_with_context<SI: ?Sized, CO, C, E, P, HD>(input: &SI, home_dir: HD, 
 }
 
 #[inline]
-pub fn full<SI: ?Sized>(input: &SI) -> Result<Cow<str>, LookupError<VarError>> where SI: AsRef<str> {
+pub fn full_with_context_no_errors<SI: ?Sized, CO, C, P, HD>(input: &SI, home_dir: HD, mut context: C) -> Cow<str>
+    where SI: AsRef<str>,
+          CO: AsRef<str>,
+          C: FnMut(&str) -> Option<CO>,
+          P: AsRef<Path>,
+          HD: FnMut() -> Option<P>
+{
+    match full_with_context(input, home_dir, move |s| Ok::<Option<CO>, ()>(context(s))) {
+        Ok(result) => result,
+        Err(_) => unreachable!()
+    }
+}
+
+#[inline]
+pub fn full<SI: ?Sized>(input: &SI) -> Result<Cow<str>, LookupError<VarError>>
+    where SI: AsRef<str>
+{
     full_with_context(input, std::env::home_dir, |s| std::env::var(s).map(Some))
 }
 
@@ -143,7 +161,21 @@ pub fn env_with_context<SI: ?Sized, CO, C, E>(input: &SI, mut context: C) -> Res
 }
 
 #[inline]
-pub fn env<SI: ?Sized>(input: &SI) -> Result<Cow<str>, LookupError<VarError>> where SI: AsRef<str> {
+pub fn env_with_context_no_errors<SI: ?Sized, CO, C>(input: &SI, mut context: C) -> Cow<str>
+    where SI: AsRef<str>,
+          CO: AsRef<str>,
+          C: FnMut(&str) -> Option<CO>
+{
+    match env_with_context(input, move |s| Ok::<Option<CO>, ()>(context(s))) {
+        Ok(value) => value,
+        Err(_) => unreachable!()
+    }
+}
+
+#[inline]
+pub fn env<SI: ?Sized>(input: &SI) -> Result<Cow<str>, LookupError<VarError>>
+    where SI: AsRef<str>
+{
     env_with_context(input, |s| std::env::var(s).map(Some))
 }
 
@@ -174,7 +206,9 @@ pub fn tilde_with_context<SI: ?Sized, P, HD>(input: &SI, mut home_dir: HD) -> Co
 }
 
 #[inline]
-pub fn tilde<SI: ?Sized>(input: &SI) -> Cow<str> where SI: AsRef<str> {
+pub fn tilde<SI: ?Sized>(input: &SI) -> Cow<str>
+    where SI: AsRef<str>
+{
     tilde_with_context(input, std::env::home_dir)
 }
 
