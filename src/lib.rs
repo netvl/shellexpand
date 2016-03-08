@@ -1,9 +1,156 @@
+//! Provides functions which perform shell-like expansions in strings.
+//!
+//! In particular, the following expansions are supported:
+//! * tilde expansion, when `~` in the beginning of a string, like in `"~/some/path"`,
+//!   is expanded into the home directory of the current user;
+//! * environment expansion, when `$A` or `${B}`, like in `"~/$A/${B}something"`,
+//!   are expanded into their values in some environment.
+//!
+//! The source of external information for these expansions (home directory and environment
+//! variables) is called their *context*. The context is provided to these functions as a closure
+//! of the respective type.
+//!
+//! This crate provides both customizable functions, which require their context to be provided
+//! explicitly, and wrapper functions which use `std::env::home_dir()` and `std::env::var()`
+//! for obtaining home directory and environment variables, respectively.
+//!
+//! Also there is a "full" expansions function which performs both tilde and environment
+//! expansion, but does it correctly: for example, if the string starts with a variable
+//! whose value starts with a `~`, then this tilde won't be expanded.
+//!
+//! All functions return `Cow<str>` because it is possible for their input not to contain anything
+//! which triggers the expansion. In that case performing allocations can be avoided.
+//!
+//! Please note that by default unknown variables in environment expansion are left as they are
+//! and are not, for example, substituted with an empty string:
+//!
+//! ```
+//! fn context(_: &str) -> Option<String> { None }
+//!
+//! assert_eq!(
+//!     shellexpand::env_with_context_no_errors("$A $B", context),
+//!     "$A $B"
+//! );
+//! ```
+//!
+//! Environment expansion context allows for a very fine tweaking of how results should be handled,
+//! so it is up to the user to pass a context function which does the necessary thing. For example,
+//! `env()` and `full()` functions from this library pass through all errors returned by
+//! `std::env::var()`, therefore they will also return an error if some unknown environment
+//! variable is used, because `std::env::var()` returns an error in this case:
+//!
+//! ```
+//! use std::env;
+//!
+//! // make sure that the variable indeed does not exist
+//! env::remove_var("MOST_LIKELY_NONEXISTING_VAR");
+//!
+//! assert_eq!(
+//!     shellexpand::env("$MOST_LIKELY_NONEXISTING_VAR"),
+//!     Err(shellexpand::LookupError {
+//!         name: "MOST_LIKELY_NONEXISTING_VAR".into(),
+//!         cause: env::VarError::NotPresent
+//!     })
+//! );
+//! ```
+//!
+//! The author thinks that this approach is more useful than just substituting an empty string
+//! (like, for example, Go does with its [os.ExpandEnv](https://golang.org/pkg/os/#ExpandEnv)
+//! function), but if you do need `os.ExpandEnv`-like behavior, it is fairly easy to get one:
+//!
+//! ```
+//! use std::env;
+//! use std::borrow::Cow;
+//!
+//! fn context(s: &str) -> Result<Option<Cow<'static, str>>, env::VarError> {
+//!     match env::var(s) {
+//!         Ok(value) => Ok(Some(value.into())),
+//!         Err(env::VarError::NotPresent) => Ok(Some("".into())),
+//!         Err(e) => Err(e)
+//!     }
+//! }
+//!
+//! // make sure that the variable indeed does not exist
+//! env::remove_var("MOST_LIKELY_NONEXISTING_VAR");
+//!
+//! assert_eq!(
+//!     shellexpand::env_with_context("a${MOST_LIKELY_NOEXISTING_VAR}b", context).unwrap(),
+//!     "ab"
+//! );
+//! ```
+//!
+//! The above example also demonstrates the flexibility of context function signatures: the context
+//! function may return anything which can be `AsRef`ed into a string slice.
+
 use std::borrow::Cow;
 use std::env::VarError;
 use std::error::Error;
 use std::fmt;
 use std::path::Path;
 
+/// Performs both tilde and environment expansion using the provided contexts.
+///
+/// `home_dir` and `context` are contexts for tilde expansion and environment expansion,
+/// respectively. See `env_with_context()` and `tilde_with_context()` for more details on
+/// them.
+///
+/// Unfortunately, expanding both `~` and `$VAR`s at the same time is not that simple. First,
+/// this function has to track ownership of the data. Since all functions in this crate
+/// return `Cow<str>`, this function takes some precautions in order not to allocate more than
+/// necessary. In particular, if the input string contains neither tilde nor `$`-vars, this
+/// function will perform no allocations.
+///
+/// Second, if the input string starts with a variable, and the value of this variable starts
+/// with tilde, the naive approach may result into expansion of this tilde. This function
+/// avoids this.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::{PathBuf, Path};
+/// use std::borrow::Cow;
+///
+/// fn home_dir() -> Option<PathBuf> { Some(Path::new("/home/user").into()) }
+///
+/// fn get_env(name: &str) -> Result<Option<&'static str>, &'static str> {
+///     match name {
+///         "A" => Ok(Some("a value")),
+///         "B" => Ok(Some("b value")),
+///         "T" => Ok(Some("~")),
+///         "E" => Err("some error"),
+///         _ => Ok(None)
+///     }
+/// }
+///
+/// // Performs both tilde and environment expansions
+/// assert_eq!(
+///     shellexpand::full_with_context("~/$A/$B", home_dir, get_env).unwrap(),
+///     "/home/user/a value/b value"
+/// );
+///
+/// // Errors from environment expansion are propagated to the result
+/// assert_eq!(
+///     shellexpand::full_with_context("~/$E/something", home_dir, get_env),
+///     Err(shellexpand::LookupError {
+///         name: "E".into(),
+///         cause: "some error"
+///     })
+/// );
+/// 
+/// // Input without starting tilde and without variables does not cause allocations
+/// let s = shellexpand::full_with_context("some/path", home_dir, get_env);
+/// match s {
+///     Ok(Cow::Borrowed(s)) => assert_eq!(s, "some/path"),
+///     _ => unreachable!("the above variant is always valid")
+/// }
+///
+/// // Input with a tilde inside a variable in the beginning of the string does not cause tilde
+/// // expansion
+/// assert_eq!(
+///     shellexpand::full_with_context("$T/$A/$B", home_dir, get_env).unwrap(),
+///     "~/a value/b value"
+/// );
+/// ```
 pub fn full_with_context<SI: ?Sized, CO, C, E, P, HD>(input: &SI, home_dir: HD, context: C) -> Result<Cow<str>, LookupError<E>>
     where SI: AsRef<str>,
           CO: AsRef<str>,
@@ -32,6 +179,51 @@ pub fn full_with_context<SI: ?Sized, CO, C, E, P, HD>(input: &SI, home_dir: HD, 
     })
 }
 
+/// Same as `full_with_context()`, but forbids variable lookup function to return errors.
+///
+/// This function also performs full shell-like expansion, but it uses
+/// `env_with_context_no_errors()` for environment expansion whose context lookup function returns
+/// just `Option<CO>` instead of `Result<Option<CO>, E>`. Therefore, the function itself also
+/// returns just `Cow<str>` instead of `Result<Cow<str>, LookupError<E>>`. Otherwise it is
+/// identical to `full_with_context()`.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::{PathBuf, Path};
+/// use std::borrow::Cow;
+///
+/// fn home_dir() -> Option<PathBuf> { Some(Path::new("/home/user").into()) }
+///
+/// fn get_env(name: &str) -> Option<&'static str> {
+///     match name {
+///         "A" => Some("a value"),
+///         "B" => Some("b value"),
+///         "T" => Some("~"),
+///         _ => None
+///     }
+/// }
+///
+/// // Performs both tilde and environment expansions
+/// assert_eq!(
+///     shellexpand::full_with_context_no_errors("~/$A/$B", home_dir, get_env),
+///     "/home/user/a value/b value"
+/// );
+///
+/// // Input without starting tilde and without variables does not cause allocations
+/// let s = shellexpand::full_with_context_no_errors("some/path", home_dir, get_env);
+/// match s {
+///     Cow::Borrowed(s) => assert_eq!(s, "some/path"),
+///     _ => unreachable!("the above variant is always valid")
+/// }
+///
+/// // Input with a tilde inside a variable in the beginning of the string does not cause tilde
+/// // expansion
+/// assert_eq!(
+///     shellexpand::full_with_context_no_errors("$T/$A/$B", home_dir, get_env),
+///     "~/a value/b value"
+/// );
+/// ```
 #[inline]
 pub fn full_with_context_no_errors<SI: ?Sized, CO, C, P, HD>(input: &SI, home_dir: HD, mut context: C) -> Cow<str>
     where SI: AsRef<str>,
