@@ -1,6 +1,7 @@
 //! Provides functions which perform shell-like expansions in strings.
 //!
 //! In particular, the following expansions are supported:
+//!
 //! * tilde expansion, when `~` in the beginning of a string, like in `"~/some/path"`,
 //!   is expanded into the home directory of the current user;
 //! * environment expansion, when `$A` or `${B}`, like in `"~/$A/${B}something"`,
@@ -35,8 +36,8 @@
 //!
 //! Environment expansion context allows for a very fine tweaking of how results should be handled,
 //! so it is up to the user to pass a context function which does the necessary thing. For example,
-//! `env()` and `full()` functions from this library pass through all errors returned by
-//! `std::env::var()`, therefore they will also return an error if some unknown environment
+//! `env()` and `full()` functions from this library pass all errors returned by `std::env::var()`
+//! through, therefore they will also return an error if some unknown environment
 //! variable is used, because `std::env::var()` returns an error in this case:
 //!
 //! ```
@@ -55,7 +56,7 @@
 //! ```
 //!
 //! The author thinks that this approach is more useful than just substituting an empty string
-//! (like, for example, Go does with its [os.ExpandEnv](https://golang.org/pkg/os/#ExpandEnv)
+//! (like, for example, does Go with its [os.ExpandEnv](https://golang.org/pkg/os/#ExpandEnv)
 //! function), but if you do need `os.ExpandEnv`-like behavior, it is fairly easy to get one:
 //!
 //! ```
@@ -179,7 +180,7 @@ pub fn full_with_context<SI: ?Sized, CO, C, E, P, HD>(input: &SI, home_dir: HD, 
     })
 }
 
-/// Same as `full_with_context()`, but forbids variable lookup function to return errors.
+/// Same as `full_with_context()`, but forbids the variable lookup function to return errors.
 ///
 /// This function also performs full shell-like expansion, but it uses
 /// `env_with_context_no_errors()` for environment expansion whose context lookup function returns
@@ -238,6 +239,46 @@ pub fn full_with_context_no_errors<SI: ?Sized, CO, C, P, HD>(input: &SI, home_di
     }
 }
 
+/// Performs both tilde and environment expansions in the default system context.
+///
+/// This function delegates to `full_with_context()`, using the default system sources for both
+/// home directory and environment, namely `std::env::home_dir()` and `std::env::var()`.
+///
+/// Note that variable lookup of unknown variables will fail with an error instead of, for example,
+/// replacing the unknown variable with an empty string. The author thinks that this behavior is
+/// more useful than others. If you need to change it, use `full_with_context()` or
+/// `full_with_context_no_errors()` with the appropriate context function instead.
+///
+/// This function behaves exactly like `full_with_context()` in regard to tilde-containing
+/// variables in the beginning of the input string.
+///
+/// # Examples
+///
+/// ```
+/// use std::env;
+///
+/// env::set_var("A", "a value");
+/// env::set_var("B", "b value");
+///
+/// let home_dir = env::home_dir()
+///     .map(|p| p.display().to_string())
+///     .unwrap_or_else(|| "~".to_owned());
+///
+/// // Performs both tilde and environment expansions using the system contexts
+/// assert_eq!(
+///     shellexpand::full("~/$A/${B}s").unwrap(),
+///     format!("{}/a value/b values", home_dir)
+/// );
+///
+/// // Unknown variables cause expansion errors
+/// assert_eq!(
+///     shellexpand::full("~/$UNKNOWN/$B"),
+///     Err(shellexpand::LookupError {
+///         name: "UNKNOWN".into(),
+///         cause: env::VarError::NotPresent
+///     })
+/// );
+/// ```
 #[inline]
 pub fn full<SI: ?Sized>(input: &SI) -> Result<Cow<str>, LookupError<VarError>>
     where SI: AsRef<str>
@@ -245,9 +286,17 @@ pub fn full<SI: ?Sized>(input: &SI) -> Result<Cow<str>, LookupError<VarError>>
     full_with_context(input, std::env::home_dir, |s| std::env::var(s).map(Some))
 }
 
+/// Represents a variable lookup error.
+///
+/// This error is returned by `env_with_context()` function (and, therefore, also by `env()`,
+/// `full_with_context()` and `full()`) when the provided context function returns an error. The
+/// original error is provided in the `cause` field, while `name` contains the name of a variable
+/// whose expansion caused the error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LookupError<E> {
+    /// The name of the problematic variable inside the input string.
     pub name: String,
+    /// The original error returned by the context function.
     pub cause: E
 }
 
@@ -275,6 +324,72 @@ fn is_valid_var_name_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
+/// Performs environment expansion using the provided context.
+///
+/// This function walks through the input string `input` and attempts to construct a new string by
+/// replacing all shell-like variable sequences with the corresponding values obtained via the
+/// `context` function. The latter may return an error; in this case the error will be returned
+/// immediately, along with the name of the offending variable. Also the context function may
+/// return `Ok(None)`, indicating that the given variable is not available; in this case the
+/// variable sequence is left as it is in the output string.
+///
+/// The syntax of variables resembles the one of bash-like shells: all of `$VAR`, `${VAR}`,
+/// `$NAME_WITH_UNDERSCORES` are valid variable references, and the form with braces may be used to
+/// separate the reference from the surrounding alphanumeric text: `before${VAR}after`. Note,
+/// however, that for simplicity names like `$123` or `$1AB` are also valid, as opposed to shells
+/// where `$<number>` has special meaning of positional arguments. Also note that "alphanumericity"
+/// of variable names is checked with `char::is_alphanumeric()`, therefore lots of characters which
+/// are considered alphanumeric by the Unicode standard are also valid names for variables. When
+/// unsure, use braces to separate variables from the surrounding text.
+///
+/// This function has four generic type parameters: `SI` represents the input string, `CO` is the
+/// output of context lookups, `C` is the context closure and `E` is the type of errors returned by
+/// the context function. `SI` and `CO` must be types, a references to which can be converted to
+/// a string slice. For example, it is fine for the context function to return `&str`s, `String`s,
+/// `Cow<str>`s, which gives the user a lot of flexibility.
+///
+/// If the context function returns an error, it will be wrapped into `LookupError` and returned
+/// immediately. `LookupError`, besides the original error, also contains a string with the name of
+/// the variable whose expansion caused the error. `LookupError` implements `Error`, `Clone` and
+/// `Eq` traits for further convenience and interoperability.
+///
+/// If you need to expand system environment variables, you can use `env()` or `full()` function.
+/// If your context does not have errors, you may use `env_with_context_no_errors()` instead of
+/// this function because it provides a simpler API.
+///
+/// # Examples
+///
+/// ```
+/// fn context(s: &str) -> Result<Option<&'static str>, &'static str> {
+///     match s {
+///         "A" => Ok(Some("a value")),
+///         "B" => Ok(Some("b value")),
+///         "E" => Err("something went wrong"),
+///         _ => Ok(None)
+///     }
+/// }
+///
+/// // Regular variables are expanded
+/// assert_eq!(
+///     shellexpand::env_with_context("begin/$A/${B}s/end", context).unwrap(),
+///     "begin/a value/b values/end"
+/// );
+///
+/// // Unknown variables are left as is
+/// assert_eq!(
+///     shellexpand::env_with_context("begin/$UNKNOWN/end", context).unwrap(),
+///     "begin/$UNKNOWN/end"
+/// );
+///
+/// // Errors are propagated
+/// assert_eq!(
+///     shellexpand::env_with_context("begin${E}end", context),
+///     Err(shellexpand::LookupError {
+///         name: "E".into(),
+///         cause: "something went wrong"
+///     })
+/// );
+/// ```
 pub fn env_with_context<SI: ?Sized, CO, C, E>(input: &SI, mut context: C) -> Result<Cow<str>, LookupError<E>>
     where SI: AsRef<str>,
           CO: AsRef<str>,
@@ -352,6 +467,41 @@ pub fn env_with_context<SI: ?Sized, CO, C, E>(input: &SI, mut context: C) -> Res
     }
 }
 
+/// Same as `env_with_context()`, but forbids the variable lookup function to return errors.
+///
+/// This function also performs environment expansion, but it requires context function of type
+/// `FnMut(&str) -> Option<CO>` instead of `FnMut(&str) -> Result<Option<CO>, E>`. This simplifies
+/// the API when you know in advance that the context lookups may not fail.
+///
+/// Because of the above, instead of `Result<Cow<str>, LookupError<E>>` this function returns just
+/// `Cow<str>`.
+///
+/// Note that if the context function returns `None`, the behavior remains the same as that of
+/// `env_with_context()`: the variable reference will remain in the output string unexpanded.
+///
+/// # Examples
+/// 
+/// ```
+/// fn context(s: &str) -> Option<&'static str> {
+///     match s {
+///         "A" => Some("a value"),
+///         "B" => Some("b value"),
+///         _ => None
+///     }
+/// }
+///
+/// // Known variables are expanded
+/// assert_eq!(
+///     shellexpand::env_with_context_no_errors("begin/$A/${B}s/end", context),
+///     "begin/a value/b values/end"
+/// );
+///
+/// // Unknown variables are left as is
+/// assert_eq!(
+///     shellexpand::env_with_context_no_errors("begin/$U/end", context),
+///     "begin/$U/end"
+/// );
+/// ```
 #[inline]
 pub fn env_with_context_no_errors<SI: ?Sized, CO, C>(input: &SI, mut context: C) -> Cow<str>
     where SI: AsRef<str>,
