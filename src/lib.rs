@@ -246,8 +246,8 @@ pub fn full_with_context_no_errors<SI: ?Sized, CO, C, P, HD>(input: &SI, home_di
 ///
 /// Note that variable lookup of unknown variables will fail with an error instead of, for example,
 /// replacing the unknown variable with an empty string. The author thinks that this behavior is
-/// more useful than others. If you need to change it, use `full_with_context()` or
-/// `full_with_context_no_errors()` with the appropriate context function instead.
+/// more useful than other ones. If you need to change it, use `full_with_context()` or
+/// `full_with_context_no_errors()` with an appropriate context function instead.
 ///
 /// This function behaves exactly like `full_with_context()` in regard to tilde-containing
 /// variables in the beginning of the input string.
@@ -324,7 +324,7 @@ fn is_valid_var_name_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
-/// Performs environment expansion using the provided context.
+/// Performs the environment expansion using the provided context.
 ///
 /// This function walks through the input string `input` and attempts to construct a new string by
 /// replacing all shell-like variable sequences with the corresponding values obtained via the
@@ -353,7 +353,7 @@ fn is_valid_var_name_char(c: char) -> bool {
 /// the variable whose expansion caused the error. `LookupError` implements `Error`, `Clone` and
 /// `Eq` traits for further convenience and interoperability.
 ///
-/// If you need to expand system environment variables, you can use `env()` or `full()` function.
+/// If you need to expand system environment variables, you can use `env()` or `full()` functions.
 /// If your context does not have errors, you may use `env_with_context_no_errors()` instead of
 /// this function because it provides a simpler API.
 ///
@@ -514,6 +514,40 @@ pub fn env_with_context_no_errors<SI: ?Sized, CO, C>(input: &SI, mut context: C)
     }
 }
 
+/// Performs the environment expansion using the default system context.
+///
+/// This function delegates to `env_with_context()`, using the default system source for
+/// environment variables, namely the `std::env::var()` function.
+///
+/// Note that variable lookup of unknown variables will fail with an error instead of, for example,
+/// replacing the offending variables with an empty string. The author thinks that such behavior is
+/// more useful than other ones. If you need something else, use `env_with_context()` or
+/// `env_with_context_no_errors()` with an appropriate context function.
+///
+/// # Examples
+///
+/// ```
+/// use std::env;
+/// 
+/// // make sure that some environment variables are set
+/// env::set_var("X", "x value");
+/// env::set_var("Y", "y value");
+///
+/// // Known variables are expanded
+/// assert_eq!(
+///     shellexpand::env("begin/$X/${Y}s/end").unwrap(),
+///     "begin/x value/y values/end"
+/// );
+///
+/// // Unknown variables result in an error
+/// assert_eq!(
+///     shellexpand::env("begin/$Z/end"),
+///     Err(shellexpand::LookupError {
+///         name: "Z".into(),
+///         cause: env::VarError::NotPresent
+///     })
+/// );
+/// ```
 #[inline]
 pub fn env<SI: ?Sized>(input: &SI) -> Result<Cow<str>, LookupError<VarError>>
     where SI: AsRef<str>
@@ -521,6 +555,32 @@ pub fn env<SI: ?Sized>(input: &SI) -> Result<Cow<str>, LookupError<VarError>>
     env_with_context(input, |s| std::env::var(s).map(Some))
 }
 
+/// Performs the tilde expansion using the provided context.
+///
+/// This function expands tilde (`~`) character in the beginning of the input string into contents
+/// of the path returned by `home_dir` function. If the input string does not contain a tilde, or
+/// if it is not followed either by a slash (`/`) or by the end of string, then it is also left as
+/// is. This means, in particular, that expansions like `~anotheruser/directory` are not supported.
+/// The context function may also return a `None`, in that case even if the tilde is present in the
+/// input in the correct place, it won't be replaced (there is nothing to replace it with, after
+/// all).
+///
+/// This function has three generic type parameters: `SI` represents the input string, `P` is the
+/// output of a context lookup, and `HD` is the context closure. `SI` must be a type, a reference
+/// to which can be converted to a string slice via `AsRef<str>`, and `P` must be a type, a
+/// reference to which can be converted to a `Path` via `AsRef<Path>`. For example, `P` may be
+/// `Path`, `PathBuf` or `Cow<Path>`, which gives a lot of flexibility.
+///
+/// If you need to expand the tilde into the actual user home directory, you can use `tilde()` or
+/// `full()` functions.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::{PathBuf, Path};
+///
+/// fn hd() -> Option<PathBuf> { Some(Path::new("/home/user").into()) }
+/// ```
 pub fn tilde_with_context<SI: ?Sized, P, HD>(input: &SI, mut home_dir: HD) -> Cow<str>
     where SI: AsRef<str>,
           P: AsRef<Path>,
