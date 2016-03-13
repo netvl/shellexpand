@@ -2,4 +2,10 @@
 name = "shellexpand"
 version = "0.1.0"
 authors = ["Vladimir Matveev <vladimir.matweev@gmail.com>"]
+license = "MIT/Apache-2.0"
+description = "Shell-like expansions in strings"
+repository = "https://github.com/netvl/shellexpand"
+documentation = "http://netvl.github.io/shellexpand/"
+readme = "Readme.md"
+keywords = ["strings", "shell", "variables"]
 
