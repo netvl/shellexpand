@@ -1,4 +1,4 @@
-//! Provides functions which perform shell-like expansions in strings.
+//! Provides functions for performing shell-like expansions in strings.
 //!
 //! In particular, the following expansions are supported:
 //!
@@ -15,7 +15,7 @@
 //! explicitly, and wrapper functions which use `std::env::home_dir()` and `std::env::var()`
 //! for obtaining home directory and environment variables, respectively.
 //!
-//! Also there is a "full" expansions function which performs both tilde and environment
+//! Also there is a "full" function which performs both tilde and environment
 //! expansion, but does it correctly: for example, if the string starts with a variable
 //! whose value starts with a `~`, then this tilde won't be expanded.
 //!
@@ -137,7 +137,7 @@ use std::path::Path;
 ///         cause: "some error"
 ///     })
 /// );
-/// 
+///
 /// // Input without starting tilde and without variables does not cause allocations
 /// let s = shellexpand::full_with_context("some/path", home_dir, get_env);
 /// match s {
@@ -456,7 +456,7 @@ pub fn env_with_context<SI: ?Sized, CO, C, E>(input: &SI, mut context: C) -> Res
                 input_str = if next_char == Some('$') {
                     &input_str[2..]   // skip the next dollar for escaping
                 } else {
-                    &input_str[1..] 
+                    &input_str[1..]
                 };
                 next_dollar_idx = find_dollar(input_str);
             };
@@ -480,7 +480,7 @@ pub fn env_with_context<SI: ?Sized, CO, C, E>(input: &SI, mut context: C) -> Res
 /// `env_with_context()`: the variable reference will remain in the output string unexpanded.
 ///
 /// # Examples
-/// 
+///
 /// ```
 /// fn context(s: &str) -> Option<&'static str> {
 ///     match s {
@@ -528,7 +528,7 @@ pub fn env_with_context_no_errors<SI: ?Sized, CO, C>(input: &SI, mut context: C)
 ///
 /// ```
 /// use std::env;
-/// 
+///
 /// // make sure that some environment variables are set
 /// env::set_var("X", "x value");
 /// env::set_var("Y", "y value");
@@ -607,6 +607,25 @@ pub fn tilde_with_context<SI: ?Sized, P, HD>(input: &SI, mut home_dir: HD) -> Co
     }
 }
 
+/// Performs the tilde expansion using the default system context.
+///
+/// This function delegates to `tilde_with_context()`, using the default system source of home
+/// directory path, namely `std::env::home_dir()` function.
+///
+/// # Examples
+///
+/// ```
+/// use std::env;
+///
+/// let hds = env::home_dir()
+///     .map(|p| p.display().to_string())
+///     .unwrap_or_else(|| "~".to_owned());
+///
+/// assert_eq!(
+///     shellexpand::tilde("~/some/dir"),
+///     format!("{}/some/dir", hds)
+/// );
+/// ```
 #[inline]
 pub fn tilde<SI: ?Sized>(input: &SI) -> Cow<str>
     where SI: AsRef<str>
