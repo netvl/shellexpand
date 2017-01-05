@@ -49,7 +49,7 @@
 //! assert_eq!(
 //!     shellexpand::env("$MOST_LIKELY_NONEXISTING_VAR"),
 //!     Err(shellexpand::LookupError {
-//!         name: "MOST_LIKELY_NONEXISTING_VAR".into(),
+//!         var_name: "MOST_LIKELY_NONEXISTING_VAR".into(),
 //!         cause: env::VarError::NotPresent
 //!     })
 //! );
@@ -133,7 +133,7 @@ use std::path::Path;
 /// assert_eq!(
 ///     shellexpand::full_with_context("~/$E/something", home_dir, get_env),
 ///     Err(shellexpand::LookupError {
-///         name: "E".into(),
+///         var_name: "E".into(),
 ///         cause: "some error"
 ///     })
 /// );
@@ -157,7 +157,7 @@ pub fn full_with_context<SI: ?Sized, CO, C, E, P, HD>(input: &SI, home_dir: HD, 
           CO: AsRef<str>,
           C: FnMut(&str) -> Result<Option<CO>, E>,
           P: AsRef<Path>,
-          HD: FnMut() -> Option<P>
+          HD: FnOnce() -> Option<P>
 {
     env_with_context(input, context).map(|r| match r {
         // variable expansion did not modify the original string, so we can apply tilde expansion
@@ -231,7 +231,7 @@ pub fn full_with_context_no_errors<SI: ?Sized, CO, C, P, HD>(input: &SI, home_di
           CO: AsRef<str>,
           C: FnMut(&str) -> Option<CO>,
           P: AsRef<Path>,
-          HD: FnMut() -> Option<P>
+          HD: FnOnce() -> Option<P>
 {
     match full_with_context(input, home_dir, move |s| Ok::<Option<CO>, ()>(context(s))) {
         Ok(result) => result,
@@ -246,7 +246,7 @@ pub fn full_with_context_no_errors<SI: ?Sized, CO, C, P, HD>(input: &SI, home_di
 ///
 /// Note that variable lookup of unknown variables will fail with an error instead of, for example,
 /// replacing the unknown variable with an empty string. The author thinks that this behavior is
-/// more useful than other ones. If you need to change it, use `full_with_context()` or
+/// more useful than the other ones. If you need to change it, use `full_with_context()` or
 /// `full_with_context_no_errors()` with an appropriate context function instead.
 ///
 /// This function behaves exactly like `full_with_context()` in regard to tilde-containing
@@ -274,7 +274,7 @@ pub fn full_with_context_no_errors<SI: ?Sized, CO, C, P, HD>(input: &SI, home_di
 /// assert_eq!(
 ///     shellexpand::full("~/$UNKNOWN/$B"),
 ///     Err(shellexpand::LookupError {
-///         name: "UNKNOWN".into(),
+///         var_name: "UNKNOWN".into(),
 ///         cause: env::VarError::NotPresent
 ///     })
 /// );
@@ -295,14 +295,14 @@ pub fn full<SI: ?Sized>(input: &SI) -> Result<Cow<str>, LookupError<VarError>>
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LookupError<E> {
     /// The name of the problematic variable inside the input string.
-    pub name: String,
+    pub var_name: String,
     /// The original error returned by the context function.
     pub cause: E
 }
 
 impl<E: fmt::Display> fmt::Display for LookupError<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "error looking key '{}' up: {}", self.name, self.cause)
+        write!(f, "error looking key '{}' up: {}", self.var_name, self.cause)
     }
 }
 
@@ -315,7 +315,7 @@ macro_rules! try_lookup {
     ($name:expr, $e:expr) => {
         match $e {
             Ok(s) => s,
-            Err(e) => return Err(LookupError { name: $name.into(), cause: e })
+            Err(e) => return Err(LookupError { var_name: $name.into(), cause: e })
         }
     }
 }
@@ -345,7 +345,7 @@ fn is_valid_var_name_char(c: char) -> bool {
 /// This function has four generic type parameters: `SI` represents the input string, `CO` is the
 /// output of context lookups, `C` is the context closure and `E` is the type of errors returned by
 /// the context function. `SI` and `CO` must be types, a references to which can be converted to
-/// a string slice. For example, it is fine for the context function to return `&str`s, `String`s,
+/// a string slice. For example, it is fine for the context function to return `&str`s, `String`s or
 /// `Cow<str>`s, which gives the user a lot of flexibility.
 ///
 /// If the context function returns an error, it will be wrapped into `LookupError` and returned
@@ -385,7 +385,7 @@ fn is_valid_var_name_char(c: char) -> bool {
 /// assert_eq!(
 ///     shellexpand::env_with_context("begin${E}end", context),
 ///     Err(shellexpand::LookupError {
-///         name: "E".into(),
+///         var_name: "E".into(),
 ///         cause: "something went wrong"
 ///     })
 /// );
@@ -521,7 +521,7 @@ pub fn env_with_context_no_errors<SI: ?Sized, CO, C>(input: &SI, mut context: C)
 ///
 /// Note that variable lookup of unknown variables will fail with an error instead of, for example,
 /// replacing the offending variables with an empty string. The author thinks that such behavior is
-/// more useful than other ones. If you need something else, use `env_with_context()` or
+/// more useful than the other ones. If you need something else, use `env_with_context()` or
 /// `env_with_context_no_errors()` with an appropriate context function.
 ///
 /// # Examples
@@ -543,7 +543,7 @@ pub fn env_with_context_no_errors<SI: ?Sized, CO, C>(input: &SI, mut context: C)
 /// assert_eq!(
 ///     shellexpand::env("begin/$Z/end"),
 ///     Err(shellexpand::LookupError {
-///         name: "Z".into(),
+///         var_name: "Z".into(),
 ///         cause: env::VarError::NotPresent
 ///     })
 /// );
@@ -579,12 +579,17 @@ pub fn env<SI: ?Sized>(input: &SI) -> Result<Cow<str>, LookupError<VarError>>
 /// ```
 /// use std::path::{PathBuf, Path};
 ///
-/// fn hd() -> Option<PathBuf> { Some(Path::new("/home/user").into()) }
+/// fn home_dir() -> Option<PathBuf> { Some(Path::new("/home/user").into()) }
+///
+/// assert_eq!(
+///    shellexpand::tilde_with_context("~/some/dir", home_dir),
+///    "/home/user/some/dir"
+/// );
 /// ```
-pub fn tilde_with_context<SI: ?Sized, P, HD>(input: &SI, mut home_dir: HD) -> Cow<str>
+pub fn tilde_with_context<SI: ?Sized, P, HD>(input: &SI, home_dir: HD) -> Cow<str>
     where SI: AsRef<str>,
           P: AsRef<Path>,
-          HD: FnMut() -> Option<P>
+          HD: FnOnce() -> Option<P>
 {
     let input_str = input.as_ref();
     if input_str.starts_with("~") {
@@ -686,7 +691,7 @@ mod env_test {
         ($env:expr, error, $($source:expr => $name:expr),+) => {
             $(
                 assert_eq!(env_with_context($source, $env), Err(LookupError {
-                    name: $name.into(),
+                    var_name: $name.into(),
                     cause: ()
                 }));
             )+
@@ -800,7 +805,7 @@ mod env_test {
         match std::env::var("PATH") {
             Ok(value) => assert_eq!(env("x/$PATH/x").unwrap(), format!("x/{}/x", value)),
             Err(e) => assert_eq!(env("x/$PATH/x"), Err(LookupError {
-                name: "PATH".into(),
+                var_name: "PATH".into(),
                 cause: e
             }))
         }
@@ -810,7 +815,7 @@ mod env_test {
                 format!("x/{}/x", value)
             ),
             Err(e) => assert_eq!(env("x/$SOMETHING_DEFINITELY_NONEXISTING/x"), Err(LookupError {
-                name: "SOMETHING_DEFINITELY_NONEXISTING".into(),
+                var_name: "SOMETHING_DEFINITELY_NONEXISTING".into(),
                 cause: e
             }))
         }

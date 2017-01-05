@@ -6,7 +6,7 @@ shellexpand, a library for shell-like expansion in strings
   [travis]: https://img.shields.io/travis/netvl/shellexpand.svg?style=flat-square
   [crates]: https://img.shields.io/crates/v/shellexpand.svg?style=flat-square
 
-[Documentation](https://netvl.github.io/shellexpand/)
+[Documentation](https://docs.rs/shellexpand/)
 
 shellexpand is a small dependency-less library which allows one to perform shell-like expansions in strings,
 that is, to expand variables like `$A` or `${B}` into their values inside some context and to expand
@@ -22,7 +22,7 @@ Just add a dependency in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-shellexpand = "0.1"
+shellexpand = "1.0"
 ```
 
 See the crate documentation (a link is present in the beginning of this readme) for more information
@@ -30,6 +30,12 @@ and examples.
 
 
 ## Changelog
+
+### Version 1.0.0
+
+* Fixed typos and minor incompletenesses in the documentation
+* Changed `home_dir` argument type for tilde expansion functions to `FnOnce` instead `FnMut`
+* Changed `LookupError::name` field name to `var_name`
 
 ### Version 0.1.0
 

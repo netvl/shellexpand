@@ -1,6 +1,6 @@
 [package]
 name = "shellexpand"
-version = "0.1.0"
+version = "1.0.0"
 authors = ["Vladimir Matveev <vladimir.matweev@gmail.com>"]
 license = "MIT/Apache-2.0"
 description = "Shell-like expansions in strings"
