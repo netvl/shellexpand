@@ -12,7 +12,7 @@
 //! of the respective type.
 //!
 //! This crate provides both customizable functions, which require their context to be provided
-//! explicitly, and wrapper functions which use `std::env::home_dir()` and `std::env::var()`
+//! explicitly, and wrapper functions which use `dirs::home_dir()` and `std::env::var()`
 //! for obtaining home directory and environment variables, respectively.
 //!
 //! Also there is a "full" function which performs both tilde and environment
@@ -83,6 +83,8 @@
 //! The above example also demonstrates the flexibility of context function signatures: the context
 //! function may return anything which can be `AsRef`ed into a string slice.
 
+extern crate dirs;
+
 use std::borrow::Cow;
 use std::env::VarError;
 use std::error::Error;
@@ -152,12 +154,17 @@ use std::path::Path;
 ///     "~/a value/b value"
 /// );
 /// ```
-pub fn full_with_context<SI: ?Sized, CO, C, E, P, HD>(input: &SI, home_dir: HD, context: C) -> Result<Cow<str>, LookupError<E>>
-    where SI: AsRef<str>,
-          CO: AsRef<str>,
-          C: FnMut(&str) -> Result<Option<CO>, E>,
-          P: AsRef<Path>,
-          HD: FnOnce() -> Option<P>
+pub fn full_with_context<SI: ?Sized, CO, C, E, P, HD>(
+    input: &SI,
+    home_dir: HD,
+    context: C,
+) -> Result<Cow<str>, LookupError<E>>
+where
+    SI: AsRef<str>,
+    CO: AsRef<str>,
+    C: FnMut(&str) -> Result<Option<CO>, E>,
+    P: AsRef<Path>,
+    HD: FnOnce() -> Option<P>,
 {
     env_with_context(input, context).map(|r| match r {
         // variable expansion did not modify the original string, so we can apply tilde expansion
@@ -226,23 +233,28 @@ pub fn full_with_context<SI: ?Sized, CO, C, E, P, HD>(input: &SI, home_dir: HD, 
 /// );
 /// ```
 #[inline]
-pub fn full_with_context_no_errors<SI: ?Sized, CO, C, P, HD>(input: &SI, home_dir: HD, mut context: C) -> Cow<str>
-    where SI: AsRef<str>,
-          CO: AsRef<str>,
-          C: FnMut(&str) -> Option<CO>,
-          P: AsRef<Path>,
-          HD: FnOnce() -> Option<P>
+pub fn full_with_context_no_errors<SI: ?Sized, CO, C, P, HD>(
+    input: &SI,
+    home_dir: HD,
+    mut context: C,
+) -> Cow<str>
+where
+    SI: AsRef<str>,
+    CO: AsRef<str>,
+    C: FnMut(&str) -> Option<CO>,
+    P: AsRef<Path>,
+    HD: FnOnce() -> Option<P>,
 {
     match full_with_context(input, home_dir, move |s| Ok::<Option<CO>, ()>(context(s))) {
         Ok(result) => result,
-        Err(_) => unreachable!()
+        Err(_) => unreachable!(),
     }
 }
 
 /// Performs both tilde and environment expansions in the default system context.
 ///
 /// This function delegates to `full_with_context()`, using the default system sources for both
-/// home directory and environment, namely `std::env::home_dir()` and `std::env::var()`.
+/// home directory and environment, namely `dirs::home_dir()` and `std::env::var()`.
 ///
 /// Note that variable lookup of unknown variables will fail with an error instead of, for example,
 /// replacing the unknown variable with an empty string. The author thinks that this behavior is
@@ -255,12 +267,13 @@ pub fn full_with_context_no_errors<SI: ?Sized, CO, C, P, HD>(input: &SI, home_di
 /// # Examples
 ///
 /// ```
+/// extern crate dirs;
 /// use std::env;
 ///
 /// env::set_var("A", "a value");
 /// env::set_var("B", "b value");
 ///
-/// let home_dir = env::home_dir()
+/// let home_dir = dirs::home_dir()
 ///     .map(|p| p.display().to_string())
 ///     .unwrap_or_else(|| "~".to_owned());
 ///
@@ -281,9 +294,10 @@ pub fn full_with_context_no_errors<SI: ?Sized, CO, C, P, HD>(input: &SI, home_di
 /// ```
 #[inline]
 pub fn full<SI: ?Sized>(input: &SI) -> Result<Cow<str>, LookupError<VarError>>
-    where SI: AsRef<str>
+where
+    SI: AsRef<str>,
 {
-    full_with_context(input, std::env::home_dir, |s| std::env::var(s).map(Some))
+    full_with_context(input, dirs::home_dir, |s| std::env::var(s).map(Some))
 }
 
 /// Represents a variable lookup error.
@@ -297,27 +311,40 @@ pub struct LookupError<E> {
     /// The name of the problematic variable inside the input string.
     pub var_name: String,
     /// The original error returned by the context function.
-    pub cause: E
+    pub cause: E,
 }
 
 impl<E: fmt::Display> fmt::Display for LookupError<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "error looking key '{}' up: {}", self.var_name, self.cause)
+        write!(
+            f,
+            "error looking key '{}' up: {}",
+            self.var_name, self.cause
+        )
     }
 }
 
 impl<E: Error> Error for LookupError<E> {
-    fn description(&self) -> &str { "lookup error" }
-    fn cause(&self) -> Option<&Error> { Some(&self.cause) }
+    fn description(&self) -> &str {
+        "lookup error"
+    }
+    fn cause(&self) -> Option<&Error> {
+        Some(&self.cause)
+    }
 }
 
 macro_rules! try_lookup {
     ($name:expr, $e:expr) => {
         match $e {
             Ok(s) => s,
-            Err(e) => return Err(LookupError { var_name: $name.into(), cause: e })
+            Err(e) => {
+                return Err(LookupError {
+                    var_name: $name.into(),
+                    cause: e,
+                })
+            }
         }
-    }
+    };
 }
 
 fn is_valid_var_name_char(c: char) -> bool {
@@ -390,10 +417,14 @@ fn is_valid_var_name_char(c: char) -> bool {
 ///     })
 /// );
 /// ```
-pub fn env_with_context<SI: ?Sized, CO, C, E>(input: &SI, mut context: C) -> Result<Cow<str>, LookupError<E>>
-    where SI: AsRef<str>,
-          CO: AsRef<str>,
-          C: FnMut(&str) -> Result<Option<CO>, E>
+pub fn env_with_context<SI: ?Sized, CO, C, E>(
+    input: &SI,
+    mut context: C,
+) -> Result<Cow<str>, LookupError<E>>
+where
+    SI: AsRef<str>,
+    CO: AsRef<str>,
+    C: FnMut(&str) -> Result<Option<CO>, E>,
 {
     let input_str = input.as_ref();
     if let Some(idx) = input_str.find('$') {
@@ -405,9 +436,13 @@ pub fn env_with_context<SI: ?Sized, CO, C, E>(input: &SI, mut context: C) -> Res
             result.push_str(&input_str[..next_dollar_idx]);
 
             input_str = &input_str[next_dollar_idx..];
-            if input_str.is_empty() { break; }
+            if input_str.is_empty() {
+                break;
+            }
 
-            fn find_dollar(s: &str) -> usize { s.find('$').unwrap_or(s.len()) }
+            fn find_dollar(s: &str) -> usize {
+                s.find('$').unwrap_or(s.len())
+            }
 
             let next_char = input_str[1..].chars().next();
             if next_char == Some('{') {
@@ -417,12 +452,12 @@ pub fn env_with_context<SI: ?Sized, CO, C, E>(input: &SI, mut context: C) -> Res
                         match try_lookup!(var_name, context(var_name)) {
                             Some(var_value) => {
                                 result.push_str(var_value.as_ref());
-                                input_str = &input_str[closing_brace_idx+1..];
+                                input_str = &input_str[closing_brace_idx + 1..];
                                 next_dollar_idx = find_dollar(input_str);
                             }
                             None => {
-                                result.push_str(&input_str[..closing_brace_idx+1]);
-                                input_str = &input_str[closing_brace_idx+1..];
+                                result.push_str(&input_str[..closing_brace_idx + 1]);
+                                input_str = &input_str[closing_brace_idx + 1..];
                                 next_dollar_idx = find_dollar(input_str);
                             }
                         }
@@ -454,7 +489,7 @@ pub fn env_with_context<SI: ?Sized, CO, C, E>(input: &SI, mut context: C) -> Res
             } else {
                 result.push_str("$");
                 input_str = if next_char == Some('$') {
-                    &input_str[2..]   // skip the next dollar for escaping
+                    &input_str[2..] // skip the next dollar for escaping
                 } else {
                     &input_str[1..]
                 };
@@ -504,13 +539,14 @@ pub fn env_with_context<SI: ?Sized, CO, C, E>(input: &SI, mut context: C) -> Res
 /// ```
 #[inline]
 pub fn env_with_context_no_errors<SI: ?Sized, CO, C>(input: &SI, mut context: C) -> Cow<str>
-    where SI: AsRef<str>,
-          CO: AsRef<str>,
-          C: FnMut(&str) -> Option<CO>
+where
+    SI: AsRef<str>,
+    CO: AsRef<str>,
+    C: FnMut(&str) -> Option<CO>,
 {
     match env_with_context(input, move |s| Ok::<Option<CO>, ()>(context(s))) {
         Ok(value) => value,
-        Err(_) => unreachable!()
+        Err(_) => unreachable!(),
     }
 }
 
@@ -550,7 +586,8 @@ pub fn env_with_context_no_errors<SI: ?Sized, CO, C>(input: &SI, mut context: C)
 /// ```
 #[inline]
 pub fn env<SI: ?Sized>(input: &SI) -> Result<Cow<str>, LookupError<VarError>>
-    where SI: AsRef<str>
+where
+    SI: AsRef<str>,
 {
     env_with_context(input, |s| std::env::var(s).map(Some))
 }
@@ -587,9 +624,10 @@ pub fn env<SI: ?Sized>(input: &SI) -> Result<Cow<str>, LookupError<VarError>>
 /// );
 /// ```
 pub fn tilde_with_context<SI: ?Sized, P, HD>(input: &SI, home_dir: HD) -> Cow<str>
-    where SI: AsRef<str>,
-          P: AsRef<Path>,
-          HD: FnOnce() -> Option<P>
+where
+    SI: AsRef<str>,
+    P: AsRef<Path>,
+    HD: FnOnce() -> Option<P>,
 {
     let input_str = input.as_ref();
     if input_str.starts_with("~") {
@@ -615,14 +653,14 @@ pub fn tilde_with_context<SI: ?Sized, P, HD>(input: &SI, home_dir: HD) -> Cow<st
 /// Performs the tilde expansion using the default system context.
 ///
 /// This function delegates to `tilde_with_context()`, using the default system source of home
-/// directory path, namely `std::env::home_dir()` function.
+/// directory path, namely `dirs::home_dir()` function.
 ///
 /// # Examples
 ///
 /// ```
-/// use std::env;
+/// extern crate dirs;
 ///
-/// let hds = env::home_dir()
+/// let hds = dirs::home_dir()
 ///     .map(|p| p.display().to_string())
 ///     .unwrap_or_else(|| "~".to_owned());
 ///
@@ -633,21 +671,23 @@ pub fn tilde_with_context<SI: ?Sized, P, HD>(input: &SI, home_dir: HD) -> Cow<st
 /// ```
 #[inline]
 pub fn tilde<SI: ?Sized>(input: &SI) -> Cow<str>
-    where SI: AsRef<str>
+where
+    SI: AsRef<str>,
 {
-    tilde_with_context(input, std::env::home_dir)
+    tilde_with_context(input, dirs::home_dir)
 }
 
 #[cfg(test)]
 mod tilde_tests {
     use std::path::{Path, PathBuf};
-    use std::env;
 
     use super::{tilde, tilde_with_context};
 
     #[test]
     fn test_with_tilde_no_hd() {
-        fn hd() -> Option<PathBuf> { None }
+        fn hd() -> Option<PathBuf> {
+            None
+        }
 
         assert_eq!(tilde_with_context("whatever", hd), "whatever");
         assert_eq!(tilde_with_context("whatever/~", hd), "whatever/~");
@@ -658,7 +698,9 @@ mod tilde_tests {
 
     #[test]
     fn test_with_tilde() {
-        fn hd() -> Option<PathBuf> { Some(Path::new("/home/dir").into()) }
+        fn hd() -> Option<PathBuf> {
+            Some(Path::new("/home/dir").into())
+        }
 
         assert_eq!(tilde_with_context("whatever/path", hd), "whatever/path");
         assert_eq!(tilde_with_context("whatever/~/path", hd), "whatever/~/path");
@@ -669,9 +711,9 @@ mod tilde_tests {
 
     #[test]
     fn test_global_tilde() {
-        match env::home_dir() {
+        match dirs::home_dir() {
             Some(hd) => assert_eq!(tilde("~/something"), format!("{}/something", hd.display())),
-            None => assert_eq!(tilde("~/something"), "~/something")
+            None => assert_eq!(tilde("~/something"), "~/something"),
         }
     }
 }
@@ -700,7 +742,9 @@ mod env_test {
 
     #[test]
     fn test_empty_env() {
-        fn e(_: &str) -> Result<Option<String>, ()> { Ok(None) }
+        fn e(_: &str) -> Result<Option<String>, ()> {
+            Ok(None)
+        }
 
         table! { e, unwrap,
             "whatever/path"        => "whatever/path",
@@ -726,7 +770,9 @@ mod env_test {
 
     #[test]
     fn test_error_env() {
-        fn e(_: &str) -> Result<Option<String>, ()> { Err(()) }
+        fn e(_: &str) -> Result<Option<String>, ()> {
+            Err(())
+        }
 
         table! { e, unwrap,
             "whatever/path" => "whatever/path",
@@ -756,7 +802,7 @@ mod env_test {
                 "a_b" => Ok(Some("X_Y")),
                 "EMPTY" => Ok(Some("")),
                 "ERR" => Err(()),
-                _ => Ok(None)
+                _ => Ok(None),
             }
         }
 
@@ -804,44 +850,55 @@ mod env_test {
     fn test_global_env() {
         match std::env::var("PATH") {
             Ok(value) => assert_eq!(env("x/$PATH/x").unwrap(), format!("x/{}/x", value)),
-            Err(e) => assert_eq!(env("x/$PATH/x"), Err(LookupError {
-                var_name: "PATH".into(),
-                cause: e
-            }))
+            Err(e) => assert_eq!(
+                env("x/$PATH/x"),
+                Err(LookupError {
+                    var_name: "PATH".into(),
+                    cause: e
+                })
+            ),
         }
         match std::env::var("SOMETHING_DEFINITELY_NONEXISTING") {
             Ok(value) => assert_eq!(
                 env("x/$SOMETHING_DEFINITELY_NONEXISTING/x").unwrap(),
                 format!("x/{}/x", value)
             ),
-            Err(e) => assert_eq!(env("x/$SOMETHING_DEFINITELY_NONEXISTING/x"), Err(LookupError {
-                var_name: "SOMETHING_DEFINITELY_NONEXISTING".into(),
-                cause: e
-            }))
+            Err(e) => assert_eq!(
+                env("x/$SOMETHING_DEFINITELY_NONEXISTING/x"),
+                Err(LookupError {
+                    var_name: "SOMETHING_DEFINITELY_NONEXISTING".into(),
+                    cause: e
+                })
+            ),
         }
     }
 }
 
 #[cfg(test)]
 mod full_tests {
-    use std::path::{PathBuf, Path};
+    use std::path::{Path, PathBuf};
 
     use super::full_with_context;
 
     #[test]
     fn test_quirks() {
-        fn hd() -> Option<PathBuf> { Some(Path::new("$VAR").into()) }
+        fn hd() -> Option<PathBuf> {
+            Some(Path::new("$VAR").into())
+        }
         fn env(s: &str) -> Result<Option<&'static str>, ()> {
             match s {
                 "VAR" => Ok(Some("value")),
                 "SVAR" => Ok(Some("/value")),
                 "TILDE" => Ok(Some("~")),
-                _ => Ok(None)
+                _ => Ok(None),
             }
         }
 
         // any variable-like sequence in ~ expansion should not trigger variable expansion
-        assert_eq!(full_with_context("~/something/$VAR", hd, env).unwrap(), "$VAR/something/value");
+        assert_eq!(
+            full_with_context("~/something/$VAR", hd, env).unwrap(),
+            "$VAR/something/value"
+        );
 
         // variable just after tilde should be substituted first and trigger regular tilde
         // expansion
@@ -849,8 +906,14 @@ mod full_tests {
         assert_eq!(full_with_context("~$SVAR", hd, env).unwrap(), "$VAR/value");
 
         // variable expanded into a tilde in the beginning should not trigger tilde expansion
-        assert_eq!(full_with_context("$TILDE/whatever", hd, env).unwrap(), "~/whatever");
-        assert_eq!(full_with_context("${TILDE}whatever", hd, env).unwrap(), "~whatever");
+        assert_eq!(
+            full_with_context("$TILDE/whatever", hd, env).unwrap(),
+            "~/whatever"
+        );
+        assert_eq!(
+            full_with_context("${TILDE}whatever", hd, env).unwrap(),
+            "~whatever"
+        );
         assert_eq!(full_with_context("$TILDE", hd, env).unwrap(), "~");
     }
 }
