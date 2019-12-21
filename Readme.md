@@ -8,13 +8,13 @@ shellexpand, a library for shell-like expansion in strings
 
 [Documentation](https://docs.rs/shellexpand/)
 
-shellexpand is a small dependency-less library which allows one to perform shell-like expansions in strings,
+shellexpand is a single dependency library which allows one to perform shell-like expansions in strings,
 that is, to expand variables like `$A` or `${B}` into their values inside some context and to expand
 `~` in the beginning of a string into the home directory (again, inside some context).
 
 This crate provides generic functions which accept arbitrary contexts as well as default, system-based
 functions which perform expansions using the system-wide context (represented by functions from `std::env`
-module).
+module and [dirs](https://crates.io/crates/dirs) crate).
 
 ## Usage
 
@@ -22,7 +22,7 @@ Just add a dependency in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-shellexpand = "1.0"
+shellexpand = "1.1.0"
 ```
 
 See the crate documentation (a link is present in the beginning of this readme) for more information
@@ -30,6 +30,10 @@ and examples.
 
 
 ## Changelog
+
+### Version 1.1.0
+
+* Changed use of deprecated `std::env::home_dir` to the [dirs](https://crates.io/crates/dirs)::home_dir function
 
 ### Version 1.0.0
 
