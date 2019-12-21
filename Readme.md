@@ -31,8 +31,9 @@ and examples.
 
 ## Changelog
 
-### Version 1.0.1
-* Changed use of deprecated `std::env::home_dir` to the crate [dirs](https://crates.io/crates/dirs)::home_dir
+### Version 1.1.0
+
+* Changed use of deprecated `std::env::home_dir` to the [dirs](https://crates.io/crates/dirs)::home_dir function
 
 ### Version 1.0.0
 
