@@ -22,7 +22,7 @@ Just add a dependency in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-shellexpand = "1.1.0"
+shellexpand = "1.1.1"
 ```
 
 See the crate documentation (a link is present in the beginning of this readme) for more information
@@ -30,6 +30,10 @@ and examples.
 
 
 ## Changelog
+
+### Version 1.1.1
+
+* Bump `dirs` dependency to 2.0.
 
 ### Version 1.1.0
 
