@@ -1,6 +1,6 @@
 [package]
 name = "shellexpand"
-version = "1.1.0"
+version = "1.1.1"
 authors = ["Vladimir Matveev <vladimir.matweev@gmail.com>"]
 license = "MIT/Apache-2.0"
 description = "Shell-like expansions in strings"
@@ -10,5 +10,5 @@ readme = "Readme.md"
 keywords = ["strings", "shell", "variables"]
 
 [dependencies]
-dirs = "1.0"
+dirs = "2.0"
 
