@@ -5,7 +5,8 @@
 //! * tilde expansion, when `~` in the beginning of a string, like in `"~/some/path"`,
 //!   is expanded into the home directory of the current user;
 //! * environment expansion, when `$A` or `${B}`, like in `"~/$A/${B}something"`,
-//!   are expanded into their values in some environment.
+//!   are expanded into their values in some environment, `${UNSET_ENV:-42}` use default value if
+//!   the environment is not set.
 //!
 //! The source of external information for these expansions (home directory and environment
 //! variables) is called their *context*. The context is provided to these functions as a closure
@@ -402,6 +403,12 @@ fn is_valid_var_name_char(c: char) -> bool {
 ///     "begin/a value/b values/end"
 /// );
 ///
+/// // Apply default value
+/// assert_eq!(
+///     shellexpand::env_with_context("begin/${UNSET_ENV:-42}/end", context).unwrap(),
+///     "begin/42/end"
+/// );///
+///
 /// // Unknown variables are left as is
 /// assert_eq!(
 ///     shellexpand::env_with_context("begin/$UNKNOWN/end", context).unwrap(),
@@ -448,20 +455,51 @@ where
             if next_char == Some('{') {
                 match input_str.find('}') {
                     Some(closing_brace_idx) => {
-                        let var_name = &input_str[2..closing_brace_idx];
-                        match try_lookup!(var_name, context(var_name)) {
-                            Some(var_value) => {
+                        let mut default_value = None;
+
+                        // Search for the default split
+                        let env_name_end_idx = match input_str[..closing_brace_idx].find(":-") {
+                            // Only match if there's a variable name, ie. this is not valid ${:-value}
+                            Some(default_split_idx) if default_split_idx != 2 => {
+                                default_value =
+                                    Some(&input_str[default_split_idx + 2..closing_brace_idx]);
+                                default_split_idx
+                            }
+                            _ => closing_brace_idx,
+                        };
+
+                        let var_name = &input_str[2..env_name_end_idx];
+                        match context(var_name) {
+                            // if we have the env set and have a value
+                            Ok(Some(var_value)) => {
                                 result.push_str(var_value.as_ref());
                                 input_str = &input_str[closing_brace_idx + 1..];
                                 next_dollar_idx = find_dollar(input_str);
                             }
-                            None => {
-                                result.push_str(&input_str[..closing_brace_idx + 1]);
+
+                            // if the env is set and empty or unset
+                            not_found_or_empty => {
+                                let value = match (not_found_or_empty, default_value) {
+                                    // return an error if we don't have a default and the env is unset
+                                    (Err(err), None) => {
+                                        return Err(LookupError {
+                                            var_name: var_name.into(),
+                                            cause: err,
+                                        });
+                                    }
+                                    // use the default value if set
+                                    (_, Some(default)) => default,
+                                    // left the variable as it is if the environment is empty
+                                    (_, None) => &input_str[..closing_brace_idx + 1],
+                                };
+
+                                result.push_str(value);
                                 input_str = &input_str[closing_brace_idx + 1..];
                                 next_dollar_idx = find_dollar(input_str);
                             }
                         }
                     }
+                    // unbalanced braces
                     None => {
                         result.push_str(&input_str[..2]);
                         input_str = &input_str[2..];
@@ -833,6 +871,18 @@ mod env_test {
             "/whatever${VAR}${VAR}" => "/whatevervaluevalue",
             "${VAR} ${VAR}" => "value value",
             "${VAR}$VAR" => "valuevalue",
+
+            // default values
+            "/answer/${UNKNOWN:-42}" => "/answer/42",
+            "/answer/${:-42}" => "/answer/${:-42}",
+            "/whatever/${UNKNOWN:-other}$VAR" => "/whatever/othervalue",
+            "/whatever/${UNKNOWN:-other}/$VAR" => "/whatever/other/value",
+            ":-/whatever/${UNKNOWN:-other}/$VAR :-" => ":-/whatever/other/value :-",
+            "/whatever/${VAR:-other}" => "/whatever/value",
+            "/whatever/${VAR:-other}$VAR" => "/whatever/valuevalue",
+            "/whatever/${VAR} :-" => "/whatever/value :-",
+            "/whatever/${:-}" => "/whatever/${:-}",
+            "/whatever/${UNKNOWN:-}" => "/whatever/",
 
             // empty variable in various positions
             "${EMPTY}/whatever/path" => "/whatever/path",
