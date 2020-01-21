@@ -328,7 +328,7 @@ impl<E: Error> Error for LookupError<E> {
     fn description(&self) -> &str {
         "lookup error"
     }
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<&dyn Error> {
         Some(&self.cause)
     }
 }
