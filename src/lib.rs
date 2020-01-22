@@ -83,8 +83,6 @@
 //! The above example also demonstrates the flexibility of context function signatures: the context
 //! function may return anything which can be `AsRef`ed into a string slice.
 
-extern crate dirs;
-
 mod home_dir;
 
 use std::borrow::Cow;
@@ -266,7 +264,6 @@ where
 /// # Examples
 ///
 /// ```
-/// extern crate dirs;
 /// use std::env;
 ///
 /// env::set_var("A", "a value");
@@ -676,8 +673,6 @@ where
 /// # Examples
 ///
 /// ```
-/// extern crate dirs;
-///
 /// let hds = dirs::home_dir()
 ///     .map(|p| p.display().to_string())
 ///     .unwrap_or_else(|| "~".to_owned());

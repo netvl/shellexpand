@@ -8,6 +8,7 @@ repository = "https://github.com/netvl/shellexpand"
 documentation = "http://netvl.github.io/shellexpand/"
 readme = "Readme.md"
 keywords = ["strings", "shell", "variables"]
+edition = "2018"
 
 [dependencies]
 dirs = "2.0"
