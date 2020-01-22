@@ -668,7 +668,7 @@ where
 /// Performs tilde expansion using the default system context.
 ///
 /// Note: Unlike the `tilde_with_context` function, this function **does** support
-/// expansions such as ~anotheruser/directory.
+/// expansions such as ~anotheruser/directory (on linux, macos and the BSDs).
 ///
 /// # Examples
 ///
