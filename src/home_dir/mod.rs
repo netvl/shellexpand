@@ -4,19 +4,16 @@
  * *******************
 */
 
-// linux and bsd
+// linux, macos, and bsd
 #[cfg(any(
     target_os = "dragonfly",
     target_os = "freebsd",
     target_os = "linux",
+    target_os = "macos",
     target_os = "netbsd",
     target_os = "openbsd",
 ))]
 mod nix;
-
-// macos
-#[cfg(target_os = "macos")]
-mod macos;
 
 // windows
 #[cfg(target_os = "windows")]
@@ -40,19 +37,16 @@ mod other;
  * *******************
 */
 
-// linux and unix (excluding macos)
+// linux, macos, and bsd
 #[cfg(any(
     target_os = "dragonfly",
     target_os = "freebsd",
     target_os = "linux",
+    target_os = "macos",
     target_os = "netbsd",
     target_os = "openbsd",
 ))]
 pub(crate) use self::nix::home_dir;
-
-// macos
-#[cfg(target_os = "macos")]
-pub(crate) use self::macos::home_dir;
 
 // windows
 #[cfg(target_os = "windows")]
@@ -125,4 +119,3 @@ pub(crate) enum HomeDirErrorKind {
     NotFound(Option<String>),
     Unimplemented,
 }
-

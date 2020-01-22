@@ -783,6 +783,13 @@ mod tilde_tests {
         assert_eq!(tilde("~root"), "/root");
         assert_eq!(tilde("~root/something"), "/root/something");
     }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_tilde_otheruser() {
+        assert_eq!(tilde("~root"), "/var/root");
+        assert_eq!(tilde("~root/something"), "/var/root/something");
+    }
 }
 
 #[cfg(test)]

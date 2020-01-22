@@ -111,6 +111,11 @@ mod tests {
         // Test for a different user. `root` is the only user account
         // I can think of that should be on all *nix systems.
         let path = home_dir(Some("root")).unwrap();
-        assert_eq!(path, Path::new("/root"));
+        let expected = if cfg!(target_os = "macos") {
+            Path::new("/var/root")
+        } else {
+            Path::new("/root")
+        };
+        assert_eq!(path, expected);
     }
 }
