@@ -50,7 +50,7 @@ pub(crate) fn home_dir(user: Option<&str>) -> Result<PathBuf, HomeDirError> {
         // If the error is due to insufficient buffer space, that's our fault.
         // Panic with the following message.
         if err == libc::ERANGE {
-            panic!("libc error while looking up home directory: Insufficient buffer space supplied. This is an implementation error and should be unreachable. If you see this message, please file an issue at https://github.com/rust-lang/rust.")
+            panic!("libc error while looking up home directory: Insufficient buffer space supplied. This is an implementation error and should be unreachable. If you see this message, please file an issue at https://github.com/netvl/shellexpand.")
         }
 
         // Otherwise, ask libc for the message associated with this error.
