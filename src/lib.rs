@@ -5,8 +5,11 @@
 //! * tilde expansion, when `~` in the beginning of a string, like in `"~/some/path"`,
 //!   is expanded into the home directory of the current user;
 //! * environment expansion, when `$A` or `${B}`, like in `"~/$A/${B}something"`,
-//!   are expanded into their values in some environment, `${UNSET_ENV:-42}` use default value if
-//!   the environment is not set.
+//!   are expanded into their values in some environment.
+//!
+//! The environment expansion also supports default values with the familiar shell syntax,
+//! so for example `${UNSET_ENV:-42}` will use the specified default value, i.e. `42`, if
+//! the `UNSET_ENV` variable is not set in the environment.
 //!
 //! The source of external information for these expansions (home directory and environment
 //! variables) is called their *context*. The context is provided to these functions as a closure
@@ -403,11 +406,11 @@ fn is_valid_var_name_char(c: char) -> bool {
 ///     "begin/a value/b values/end"
 /// );
 ///
-/// // Apply default value
+/// // Expand to a default value if the variable is not defined
 /// assert_eq!(
 ///     shellexpand::env_with_context("begin/${UNSET_ENV:-42}/end", context).unwrap(),
 ///     "begin/42/end"
-/// );///
+/// );
 ///
 /// // Unknown variables are left as is
 /// assert_eq!(
@@ -458,7 +461,7 @@ where
                         let mut default_value = None;
 
                         // Search for the default split
-                        let env_name_end_idx = match input_str[..closing_brace_idx].find(":-") {
+                        let var_name_end_idx = match input_str[..closing_brace_idx].find(":-") {
                             // Only match if there's a variable name, ie. this is not valid ${:-value}
                             Some(default_split_idx) if default_split_idx != 2 => {
                                 default_value =
@@ -468,19 +471,19 @@ where
                             _ => closing_brace_idx,
                         };
 
-                        let var_name = &input_str[2..env_name_end_idx];
+                        let var_name = &input_str[2..var_name_end_idx];
                         match context(var_name) {
-                            // if we have the env set and have a value
+                            // if we have the variable set to some value
                             Ok(Some(var_value)) => {
                                 result.push_str(var_value.as_ref());
                                 input_str = &input_str[closing_brace_idx + 1..];
                                 next_dollar_idx = find_dollar(input_str);
                             }
 
-                            // if the env is set and empty or unset
+                            // if the variable is set and empty or unset
                             not_found_or_empty => {
                                 let value = match (not_found_or_empty, default_value) {
-                                    // return an error if we don't have a default and the env is unset
+                                    // return an error if we don't have a default and the variable is unset
                                     (Err(err), None) => {
                                         return Err(LookupError {
                                             var_name: var_name.into(),
@@ -489,7 +492,7 @@ where
                                     }
                                     // use the default value if set
                                     (_, Some(default)) => default,
-                                    // left the variable as it is if the environment is empty
+                                    // leave the variable as it is if the environment is empty
                                     (_, None) => &input_str[..closing_brace_idx + 1],
                                 };
 
