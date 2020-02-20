@@ -7,7 +7,7 @@
 //! * environment expansion, when `$A` or `${B}`, like in `"~/$A/${B}something"`,
 //!   are expanded into their values in some environment.
 //!
-//! The environment expansion also supports default values with the familiar shell syntax,
+//! Environment expansion also supports default values with the familiar shell syntax,
 //! so for example `${UNSET_ENV:-42}` will use the specified default value, i.e. `42`, if
 //! the `UNSET_ENV` variable is not set in the environment.
 //!
@@ -20,8 +20,9 @@
 //! for obtaining home directory and environment variables, respectively.
 //!
 //! Also there is a "full" function which performs both tilde and environment
-//! expansion, but does it correctly: for example, if the string starts with a variable
-//! whose value starts with a `~`, then this tilde won't be expanded.
+//! expansion, but does it correctly, rather than just doing one after another: for example,
+//! if the string starts with a variable whose value starts with a `~`, then this tilde
+//! won't be expanded.
 //!
 //! All functions return `Cow<str>` because it is possible for their input not to contain anything
 //! which triggers the expansion. In that case performing allocations can be avoided.
@@ -328,11 +329,8 @@ impl<E: fmt::Display> fmt::Display for LookupError<E> {
     }
 }
 
-impl<E: Error> Error for LookupError<E> {
-    fn description(&self) -> &str {
-        "lookup error"
-    }
-    fn cause(&self) -> Option<&Error> {
+impl<E: Error + 'static> Error for LookupError<E> {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
         Some(&self.cause)
     }
 }
