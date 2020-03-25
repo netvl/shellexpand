@@ -31,6 +31,14 @@ and examples.
 
 ## Changelog
 
+### Version 2.0.0
+
+* Added support for default values in variable expansion (i.e. `${ANSWER:-42}`)
+* Breaking changes (minimum Rust version is now 1.30.0):
+  + Using `dyn` for trait objects to fix deprecation warning
+  + Switched to using `source()` instead of `cause()` in the `Error` implementation, and
+    therefore added a `'static` bound for the generic error parameter `E`
+
 ### Version 1.1.1
 
 * Bump `dirs` dependency to 2.0.
@@ -47,7 +55,7 @@ and examples.
 
 ### Version 0.1.0
 
-* Initial release.
+* Initial release
 
 ## License
 
