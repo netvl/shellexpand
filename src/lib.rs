@@ -327,6 +327,12 @@ pub struct LookupError<E> {
     pub cause: E,
 }
 
+impl<E> LookupError<E> {
+    fn for_var(var_name: impl Into<String>) -> impl FnOnce(E) -> LookupError<E> {
+        |e| LookupError { var_name: var_name.into(), cause: e }
+    }
+}
+
 impl<E: fmt::Display> fmt::Display for LookupError<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
@@ -337,27 +343,10 @@ impl<E: fmt::Display> fmt::Display for LookupError<E> {
     }
 }
 
-impl<E: Error> Error for LookupError<E> {
-    fn description(&self) -> &str {
-        "lookup error"
-    }
-    fn cause(&self) -> Option<&dyn Error> {
+impl<E: Error + 'static> Error for LookupError<E> {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
         Some(&self.cause)
     }
-}
-
-macro_rules! try_lookup {
-    ($name:expr, $e:expr) => {
-        match $e {
-            Ok(s) => s,
-            Err(e) => {
-                return Err(LookupError {
-                    var_name: $name.into(),
-                    cause: e,
-                })
-            }
-        }
-    };
 }
 
 fn is_valid_var_name_char(c: char) -> bool {
@@ -462,7 +451,7 @@ where
                 match input_str.find('}') {
                     Some(closing_brace_idx) => {
                         let var_name = &input_str[2..closing_brace_idx];
-                        match try_lookup!(var_name, context(var_name)) {
+                        match context(var_name).map_err(LookupError::for_var(var_name))? {
                             Some(var_value) => {
                                 result.push_str(var_value.as_ref());
                                 input_str = &input_str[closing_brace_idx + 1..];
@@ -487,7 +476,7 @@ where
                     .unwrap_or(input_str.len() - 2);
 
                 let var_name = &input_str[1..end_idx];
-                match try_lookup!(var_name, context(var_name)) {
+                match context(var_name).map_err(LookupError::for_var(var_name))? {
                     Some(var_value) => {
                         result.push_str(var_value.as_ref());
                         input_str = &input_str[end_idx..];
