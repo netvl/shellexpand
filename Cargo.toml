@@ -10,8 +10,12 @@ readme = "Readme.md"
 keywords = ["strings", "shell", "variables"]
 edition = "2018"
 
+[features]
+default = ["home-dir"]
+home-dir = ["libc"]
+
 [dependencies]
 dirs = "2.0"
 
-[target.'cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "linux", target_os = "netbsd", target_os = "openbsd", target_os = "macos"))'.dependencies]
-libc = "0.2"
+[target.'cfg(unix)'.dependencies]
+libc = { version = "0.2", optional = true }
