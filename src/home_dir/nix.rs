@@ -1,4 +1,4 @@
-use std::ffi::{CStr, OsString};
+use std::ffi::{CStr, CString, OsString};
 use std::mem;
 use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
@@ -20,11 +20,7 @@ pub(crate) fn home_dir(user: Option<&str>) -> Result<PathBuf, HomeDirError> {
 
     // Turn user into a "c string," i.e. a null terminated vector of bytes,
     // whose lifetime will outlive the calls to the libc functions below.
-    let user_c = {
-        let mut bytes = user.as_bytes().iter().cloned().collect::<Vec<_>>();
-        bytes.push(b'\0');
-        bytes
-    };
+    let user_c = CString::new(user).expect("User name contains an unexpected zero byte");
 
     // Ask libc for the user's home directory with `getpwnam_r`.
     const BUFLEN: usize = 1024;

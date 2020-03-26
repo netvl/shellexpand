@@ -4,31 +4,12 @@
  * *******************
 */
 
-// linux, macos, and bsd
-#[cfg(any(
-    target_os = "dragonfly",
-    target_os = "freebsd",
-    target_os = "linux",
-    target_os = "macos",
-    target_os = "netbsd",
-    target_os = "openbsd",
-))]
+// unixes
+#[cfg(all(unix, feature = "home-dir"))]
 mod nix;
 
-// windows
-#[cfg(target_os = "windows")]
-mod windows;
-
-// all others
-#[cfg(not(any(
-    target_os = "dragonfly",
-    target_os = "freebsd",
-    target_os = "linux",
-    target_os = "macos",
-    target_os = "netbsd",
-    target_os = "openbsd",
-    target_os = "windows",
-)))]
+// others
+#[cfg(not(all(unix, feature = "home-dir")))]
 mod other;
 
 /*
@@ -37,31 +18,12 @@ mod other;
  * *******************
 */
 
-// linux, macos, and bsd
-#[cfg(any(
-    target_os = "dragonfly",
-    target_os = "freebsd",
-    target_os = "linux",
-    target_os = "macos",
-    target_os = "netbsd",
-    target_os = "openbsd",
-))]
+// unixes
+#[cfg(all(unix, feature = "home-dir"))]
 pub(crate) use self::nix::home_dir;
 
-// windows
-#[cfg(target_os = "windows")]
-pub(crate) use self::windows::home_dir;
-
 // all others
-#[cfg(not(any(
-    target_os = "dragonfly",
-    target_os = "freebsd",
-    target_os = "linux",
-    target_os = "macos",
-    target_os = "netbsd",
-    target_os = "openbsd",
-    target_os = "windows",
-)))]
+#[cfg(not(all(unix, feature = "home-dir")))]
 pub(crate) use self::other::home_dir;
 
 /*
@@ -70,6 +32,7 @@ pub(crate) use self::other::home_dir;
  * *******************
 */
 
+use std::error::Error;
 use std::fmt;
 
 /// Internal error type used for debugging. Not exposed publicly.
@@ -99,19 +62,17 @@ impl HomeDirError {
 impl fmt::Display for HomeDirError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::HomeDirErrorKind::*;
-        match self.0 {
-            Libc(Some(ref msg)) => write!(f, "libc error while looking up home directory: {}.", msg),
-            Libc(None) => write!(f, "libc error while looking up home directory."),
-            NotFound(Some(ref user)) => {
-                write!(f, "Unable to find home directory for user {}.", user)
-            }
-            NotFound(None) => write!(f, "Unable to find home directory for current user."),
-            Unimplemented => write!(f, "Identifying the home directory of a user other than the current user is not yet implemented for this platform."),
+        match &self.0 {
+            Libc(Some(msg)) => write!(f, "libc error while looking up home directory: {}", msg),
+            Libc(None) => write!(f, "libc error while looking up home directory"),
+            NotFound(Some(user)) => write!(f, "Unable to find home directory for user {}", user),
+            NotFound(None) => write!(f, "Unable to find home directory for current user"),
+            Unimplemented => write!(f, "Identifying the home directory of a user other than the current user is not yet implemented for this platform"),
         }
     }
 }
 
-impl std::error::Error for HomeDirError {}
+impl Error for HomeDirError {}
 
 #[derive(Debug)]
 pub(crate) enum HomeDirErrorKind {

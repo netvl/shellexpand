@@ -7,10 +7,6 @@
 //! * environment expansion, when `$A` or `${B}`, like in `"~/$A/${B}something"`,
 //!   are expanded into their values in some environment.
 //!
-//! Environment expansion also supports default values with the familiar shell syntax,
-//! so for example `${UNSET_ENV:-42}` will use the specified default value, i.e. `42`, if
-//! the `UNSET_ENV` variable is not set in the environment.
-//!
 //! The source of external information for these expansions (home directory and environment
 //! variables) is called their *context*. The context is provided to these functions as a closure
 //! of the respective type.
@@ -20,9 +16,8 @@
 //! for obtaining home directory and environment variables, respectively.
 //!
 //! Also there is a "full" function which performs both tilde and environment
-//! expansion, but does it correctly, rather than just doing one after another: for example,
-//! if the string starts with a variable whose value starts with a `~`, then this tilde
-//! won't be expanded.
+//! expansion, but does it correctly: for example, if the string starts with a variable
+//! whose value starts with a `~`, then this tilde won't be expanded.
 //!
 //! All functions return `Cow<str>` because it is possible for their input not to contain anything
 //! which triggers the expansion. In that case performing allocations can be avoided.
@@ -332,6 +327,15 @@ pub struct LookupError<E> {
     pub cause: E,
 }
 
+impl<E> LookupError<E> {
+    fn for_var(var_name: impl Into<String>) -> impl FnOnce(E) -> LookupError<E> {
+        |e| LookupError {
+            var_name: var_name.into(),
+            cause: e,
+        }
+    }
+}
+
 impl<E: fmt::Display> fmt::Display for LookupError<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
@@ -346,20 +350,6 @@ impl<E: Error + 'static> Error for LookupError<E> {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         Some(&self.cause)
     }
-}
-
-macro_rules! try_lookup {
-    ($name:expr, $e:expr) => {
-        match $e {
-            Ok(s) => s,
-            Err(e) => {
-                return Err(LookupError {
-                    var_name: $name.into(),
-                    cause: e,
-                })
-            }
-        }
-    };
 }
 
 fn is_valid_var_name_char(c: char) -> bool {
@@ -417,12 +407,6 @@ fn is_valid_var_name_char(c: char) -> bool {
 ///     "begin/a value/b values/end"
 /// );
 ///
-/// // Expand to a default value if the variable is not defined
-/// assert_eq!(
-///     shellexpand::env_with_context("begin/${UNSET_ENV:-42}/end", context).unwrap(),
-///     "begin/42/end"
-/// );
-///
 /// // Unknown variables are left as is
 /// assert_eq!(
 ///     shellexpand::env_with_context("begin/$UNKNOWN/end", context).unwrap(),
@@ -469,51 +453,20 @@ where
             if next_char == Some('{') {
                 match input_str.find('}') {
                     Some(closing_brace_idx) => {
-                        let mut default_value = None;
-
-                        // Search for the default split
-                        let var_name_end_idx = match input_str[..closing_brace_idx].find(":-") {
-                            // Only match if there's a variable name, ie. this is not valid ${:-value}
-                            Some(default_split_idx) if default_split_idx != 2 => {
-                                default_value =
-                                    Some(&input_str[default_split_idx + 2..closing_brace_idx]);
-                                default_split_idx
-                            }
-                            _ => closing_brace_idx,
-                        };
-
-                        let var_name = &input_str[2..var_name_end_idx];
-                        match context(var_name) {
-                            // if we have the variable set to some value
-                            Ok(Some(var_value)) => {
+                        let var_name = &input_str[2..closing_brace_idx];
+                        match context(var_name).map_err(LookupError::for_var(var_name))? {
+                            Some(var_value) => {
                                 result.push_str(var_value.as_ref());
                                 input_str = &input_str[closing_brace_idx + 1..];
                                 next_dollar_idx = find_dollar(input_str);
                             }
-
-                            // if the variable is set and empty or unset
-                            not_found_or_empty => {
-                                let value = match (not_found_or_empty, default_value) {
-                                    // return an error if we don't have a default and the variable is unset
-                                    (Err(err), None) => {
-                                        return Err(LookupError {
-                                            var_name: var_name.into(),
-                                            cause: err,
-                                        });
-                                    }
-                                    // use the default value if set
-                                    (_, Some(default)) => default,
-                                    // leave the variable as it is if the environment is empty
-                                    (_, None) => &input_str[..closing_brace_idx + 1],
-                                };
-
-                                result.push_str(value);
+                            None => {
+                                result.push_str(&input_str[..closing_brace_idx + 1]);
                                 input_str = &input_str[closing_brace_idx + 1..];
                                 next_dollar_idx = find_dollar(input_str);
                             }
                         }
                     }
-                    // unbalanced braces
                     None => {
                         result.push_str(&input_str[..2]);
                         input_str = &input_str[2..];
@@ -526,7 +479,7 @@ where
                     .unwrap_or(input_str.len() - 2);
 
                 let var_name = &input_str[1..end_idx];
-                match try_lookup!(var_name, context(var_name)) {
+                match context(var_name).map_err(LookupError::for_var(var_name))? {
                     Some(var_value) => {
                         result.push_str(var_value.as_ref());
                         input_str = &input_str[end_idx..];
@@ -946,18 +899,6 @@ mod env_test {
             "/whatever${VAR}${VAR}" => "/whatevervaluevalue",
             "${VAR} ${VAR}" => "value value",
             "${VAR}$VAR" => "valuevalue",
-
-            // default values
-            "/answer/${UNKNOWN:-42}" => "/answer/42",
-            "/answer/${:-42}" => "/answer/${:-42}",
-            "/whatever/${UNKNOWN:-other}$VAR" => "/whatever/othervalue",
-            "/whatever/${UNKNOWN:-other}/$VAR" => "/whatever/other/value",
-            ":-/whatever/${UNKNOWN:-other}/$VAR :-" => ":-/whatever/other/value :-",
-            "/whatever/${VAR:-other}" => "/whatever/value",
-            "/whatever/${VAR:-other}$VAR" => "/whatever/valuevalue",
-            "/whatever/${VAR} :-" => "/whatever/value :-",
-            "/whatever/${:-}" => "/whatever/${:-}",
-            "/whatever/${UNKNOWN:-}" => "/whatever/",
 
             // empty variable in various positions
             "${EMPTY}/whatever/path" => "/whatever/path",
