@@ -4,12 +4,24 @@
  * *******************
 */
 
-// unixes
-#[cfg(all(unix, feature = "home-dir"))]
+// nix (with libc feature)
+#[cfg(all(unix, not(target_os = "redox"), feature = "libc"))]
 mod nix;
 
-// others
-#[cfg(not(all(unix, feature = "home-dir")))]
+// redox
+#[cfg(target_os = "redox")]
+mod redox;
+
+// windows
+#[cfg(windows)]
+mod windows;
+
+// all others
+#[cfg(not(any(
+    all(unix, not(target_os = "redox"), feature = "libc"),
+    target_os = "redox",
+    windows,
+)))]
 mod other;
 
 /*
@@ -18,12 +30,24 @@ mod other;
  * *******************
 */
 
-// unixes
-#[cfg(all(unix, feature = "home-dir"))]
+// nix (with libc feature enabled)
+#[cfg(all(unix, not(target_os = "redox"), feature = "libc"))]
 pub(crate) use self::nix::home_dir;
 
+// redox
+#[cfg(target_os = "redox")]
+pub(crate) use self::redox::home_dir;
+
+// windows
+#[cfg(windows)]
+pub(crate) use self::windows::home_dir;
+
 // all others
-#[cfg(not(all(unix, feature = "home-dir")))]
+#[cfg(not(any(
+    all(unix, not(target_os = "redox"), feature = "libc"),
+    target_os = "redox",
+    windows,
+)))]
 pub(crate) use self::other::home_dir;
 
 /*
@@ -39,36 +63,23 @@ use std::fmt;
 #[derive(Debug)]
 pub(crate) struct HomeDirError(HomeDirErrorKind);
 
-impl HomeDirError {
-    #[allow(unused)]
-    fn libc_error(msg: Option<&str>) -> Self {
-        let kind = HomeDirErrorKind::Libc(msg.map(|s| s.to_string()));
-        Self(kind)
-    }
-
-    #[allow(unused)]
-    fn not_found(user: Option<&str>) -> Self {
-        let kind = HomeDirErrorKind::NotFound(user.map(|s| s.to_string()));
-        Self(kind)
-    }
-
-    #[allow(unused)]
-    fn unimplemented() -> Self {
-        let kind = HomeDirErrorKind::Unimplemented;
-        Self(kind)
-    }
-}
-
 impl fmt::Display for HomeDirError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::HomeDirErrorKind::*;
         match &self.0 {
-            Libc(Some(msg)) => write!(f, "libc error while looking up home directory: {}", msg),
-            Libc(None) => write!(f, "libc error while looking up home directory"),
             NotFound(Some(user)) => write!(f, "Unable to find home directory for user {}", user),
             NotFound(None) => write!(f, "Unable to find home directory for current user"),
+            OS(Some(msg)) => write!(f, "libc error while looking up home directory: {}", msg),
+            OS(None) => write!(f, "libc error while looking up home directory"),
             Unimplemented => write!(f, "Identifying the home directory of a user other than the current user is not yet implemented for this platform"),
         }
+    }
+}
+
+impl HomeDirError {
+    fn not_found(user: Option<&str>) -> Self {
+        let kind = HomeDirErrorKind::NotFound(user.map(|s| s.to_string()));
+        Self(kind)
     }
 }
 
@@ -76,7 +87,10 @@ impl Error for HomeDirError {}
 
 #[derive(Debug)]
 pub(crate) enum HomeDirErrorKind {
-    Libc(Option<String>),
+    #[allow(unused)]
     NotFound(Option<String>),
+    #[allow(unused)]
+    OS(Option<String>),
+    #[allow(unused)]
     Unimplemented,
 }

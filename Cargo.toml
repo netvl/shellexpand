@@ -10,12 +10,18 @@ readme = "Readme.md"
 keywords = ["strings", "shell", "variables"]
 edition = "2018"
 
-[features]
-default = ["home-dir"]
-home-dir = ["libc"]
-
 [dependencies]
 dirs = "2.0"
 
-[target.'cfg(unix)'.dependencies]
+[target.'cfg(all(unix, not(target_os = "redox")))'.dependencies]
 libc = { version = "0.2", optional = true }
+
+[target.'cfg(target_os = "redox")'.dependencies]
+redox_users = "0.3"
+
+[target.'cfg(windows)'.dependencies]
+winapi = "0.3"
+
+[features]
+default = ["libc"]
+

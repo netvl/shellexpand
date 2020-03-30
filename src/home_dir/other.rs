@@ -1,22 +1,16 @@
 use std::path::PathBuf;
 
-use super::HomeDirError;
+use super::{HomeDirError, HomeDirErrorKind};
 
 /// Returns the home directory of the current user if `user` is `None` or
-/// an empty string. In the future, may return the home directory of the
-/// provided user if `user` is anything else, but that is not yet implemented
-/// for non-unix platforms and some unix platforms too.
+/// an empty string.
+///
+/// In the future, may also return the home directory of the provided user if
+/// `user` is anything else, but that is not currently implemented for this
+/// platform.
 pub(crate) fn home_dir(user: Option<&str>) -> Result<PathBuf, HomeDirError> {
     match user {
-        None | Some("") => {
-            // When user is `None` or an empty string, let the `dirs` crate
-            // do the work.
-            dirs::home_dir().ok_or_else(|| HomeDirError::not_found(None))
-        }
-        Some(user) => {
-            // Finding the home directory of a user other than the current
-            // user is not yet implemented on windows.
-            Err(HomeDirError::Unimplemented)
-        }
+        None | Some("") => dirs::home_dir().ok_or_else(|| HomeDirError::not_found(None)),
+        Some(_user) => Err(HomeDirError(HomeDirErrorKind::Unimplemented)),
     }
 }
