@@ -30,7 +30,7 @@ mod other;
  * *******************
 */
 
-// nix (with libc feature enabled)
+// nix (with libc feature)
 #[cfg(all(unix, not(target_os = "redox"), feature = "libc"))]
 pub(crate) use self::nix::home_dir;
 
