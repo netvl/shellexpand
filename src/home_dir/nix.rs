@@ -1,9 +1,9 @@
 use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::ffi::{CStr, OsString};
-use std::mem;
 use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
+use std::{env, mem};
 
 use super::{HomeDirError, HomeDirErrorKind};
 
@@ -25,6 +25,13 @@ thread_local! {
 /// * the current user if `user` is `None` or an empty string, or
 /// * the provided user if `user` is anything else.
 pub(crate) fn home_dir(user: Option<&str>) -> Result<PathBuf, HomeDirError> {
+    if user.is_none() || user == Some("") {
+        if let Some(o) = env::var_os("HOME") {
+            if !o.is_empty() {
+                return Ok(PathBuf::from(o));
+            }
+        }
+    }
     BUF0.with(move |buf0| {
         BUF1.with(move |buf1| {
             let mut buf0 = buf0.borrow_mut();
@@ -39,16 +46,13 @@ fn _home_dir(
     buf0: &mut Vec<u8>,
     buf1: &mut Vec<u8>,
 ) -> Result<PathBuf, HomeDirError> {
-    let user = match user {
-        None | Some("") => {
-            // When user is `None` or an empty string, let the `dirs` crate do the work.
-            return dirs::home_dir().ok_or_else(|| HomeDirError::not_found(None));
+    let user_ptr = match user {
+        None | Some("") => std::ptr::null(),
+        Some(user) => {
+            copy_into_buffer(user, buf0.borrow_mut());
+            buf0.as_ptr() as *const libc::c_char
         }
-        Some(user) => user,
     };
-
-    // Copy c-string version of user into buf0
-    copy_into_buffer(user, buf0.borrow_mut());
 
     // Initialze out parameters of 'libc::getpwnam_r'
     let mut pwd: libc::passwd = unsafe { mem::zeroed() };
@@ -60,7 +64,7 @@ fn _home_dir(
         // Call 'libc::getpwnam_r' to write the user's home directory into buf1
         let ret = unsafe {
             libc::getpwnam_r(
-                /* const char*     name   */ buf0.as_ptr() as *const libc::c_char,
+                /* const char*     name   */ user_ptr,
                 /* struct passwd*  pwd    */ &mut pwd as *mut libc::passwd,
                 /* char*           buf    */ buf1.as_mut_ptr() as *mut libc::c_char,
                 /* size_t          buflen */ buf1.len() as libc::size_t,
@@ -84,7 +88,7 @@ fn _home_dir(
     // If `results_ptr_ptr` is null, it means libc was unable to locate the home
     // directory.  Return a not found error.
     if result_ptr_ptr.is_null() {
-        return Err(HomeDirError::not_found(Some(user)));
+        return Err(HomeDirError::not_found(user));
     }
 
     // Libc should ensure that the `pw.pwdir` pointer is always valid; if

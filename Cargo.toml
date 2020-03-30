@@ -10,18 +10,22 @@ readme = "Readme.md"
 keywords = ["strings", "shell", "variables"]
 edition = "2018"
 
-[dependencies]
-dirs = "2.0"
-
+# nix
 [target.'cfg(all(unix, not(target_os = "redox")))'.dependencies]
 libc = { version = "0.2", optional = true }
 
+# redox
 [target.'cfg(target_os = "redox")'.dependencies]
 redox_users = "0.3"
 
+# windows
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["errhandlingapi", "handleapi", "psapi", "securitybaseapi", "userenv"] }
+winapi = { version = "0.3", features = ["errhandlingapi", "handleapi", "processthreadsapi", "psapi", "securitybaseapi", "userenv", "winbase", "winerror"] }
+
+[dev-dependencies]
+dirs = "2.0"
 
 [features]
 default = ["libc"]
+
 

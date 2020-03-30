@@ -68,6 +68,11 @@ def main():
                 if t not in installed[channel]:
                     run_rustup_target_install(channel, t)
                 run_cargo_check(channel, t)
+        # check linux without libc
+        linux_triples = OSS["linux"][1]
+        for triple in linux_triples:
+            command = f"cargo check --target={triple} --no-default-features"
+            run_command(command)
     else:
         for os in sys.argv[1:]:
             value = OSS.get(os)
@@ -80,6 +85,12 @@ def main():
                 if t not in installed[channel]:
                     run_rustup_target_install(channel, t)
                 run_cargo_check(channel, t)
+        if "linux" in sys.argv[1]:
+            # check linux without libc
+            linux_triples = OSS["linux"][1]
+            for triple in linux_triples:
+                command = f"cargo check --target={triple} --no-default-features"
+                run_command(command)
 
 
 if __name__ == "__main__":

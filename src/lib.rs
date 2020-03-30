@@ -723,7 +723,7 @@ where
 mod tilde_tests {
     use std::path::{Path, PathBuf};
 
-    use super::{tilde, tilde_with_context};
+    use super::{home_dir, tilde, tilde_with_context};
 
     #[test]
     fn test_with_tilde_no_hd() {
@@ -753,7 +753,7 @@ mod tilde_tests {
 
     #[test]
     fn test_global_tilde() {
-        match dirs::home_dir() {
+        match home_dir::home_dir(None).ok() {
             Some(hd) => assert_eq!(tilde("~/something"), format!("{}/something", hd.display())),
             None => assert_eq!(tilde("~/something"), "~/something"),
         }
