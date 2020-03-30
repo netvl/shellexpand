@@ -7,10 +7,6 @@
 //! * environment expansion, when `$A` or `${B}`, like in `"~/$A/${B}something"`,
 //!   are expanded into their values in some environment.
 //!
-//! Environment expansion also supports default values with the familiar shell syntax,
-//! so for example `${UNSET_ENV:-42}` will use the specified default value, i.e. `42`, if
-//! the `UNSET_ENV` variable is not set in the environment.
-//!
 //! The source of external information for these expansions (home directory and environment
 //! variables) is called their *context*. The context is provided to these functions as a closure
 //! of the respective type.
@@ -20,9 +16,8 @@
 //! for obtaining home directory and environment variables, respectively.
 //!
 //! Also there is a "full" function which performs both tilde and environment
-//! expansion, but does it correctly, rather than just doing one after another: for example,
-//! if the string starts with a variable whose value starts with a `~`, then this tilde
-//! won't be expanded.
+//! expansion, but does it correctly: for example, if the string starts with a variable
+//! whose value starts with a `~`, then this tilde won't be expanded.
 //!
 //! All functions return `Cow<str>` because it is possible for their input not to contain anything
 //! which triggers the expansion. In that case performing allocations can be avoided.
@@ -88,7 +83,7 @@
 //! The above example also demonstrates the flexibility of context function signatures: the context
 //! function may return anything which can be `AsRef`ed into a string slice.
 
-extern crate dirs;
+mod home_dir;
 
 use std::borrow::Cow;
 use std::env::VarError;
@@ -258,21 +253,17 @@ where
 
 /// Performs both tilde and environment expansions in the default system context.
 ///
-/// This function delegates to `full_with_context()`, using the default system sources for both
-/// home directory and environment, namely `dirs::home_dir()` and `std::env::var()`.
+/// This function delegates to using the default system sources for both
+/// home directory and environment. It first calls `env` and then calls `tilde`.
 ///
 /// Note that variable lookup of unknown variables will fail with an error instead of, for example,
 /// replacing the unknown variable with an empty string. The author thinks that this behavior is
 /// more useful than the other ones. If you need to change it, use `full_with_context()` or
 /// `full_with_context_no_errors()` with an appropriate context function instead.
 ///
-/// This function behaves exactly like `full_with_context()` in regard to tilde-containing
-/// variables in the beginning of the input string.
-///
 /// # Examples
 ///
 /// ```
-/// extern crate dirs;
 /// use std::env;
 ///
 /// env::set_var("A", "a value");
@@ -297,12 +288,29 @@ where
 ///     })
 /// );
 /// ```
-#[inline]
 pub fn full<SI: ?Sized>(input: &SI) -> Result<Cow<str>, LookupError<VarError>>
 where
     SI: AsRef<str>,
 {
-    full_with_context(input, dirs::home_dir, |s| std::env::var(s).map(Some))
+    env(input).map(|r| match r {
+        // variable expansion did not modify the original string, so we can apply tilde expansion
+        // directly
+        Cow::Borrowed(s) => tilde(s),
+        Cow::Owned(s) => {
+            // if the original string does not start with a tilde but the processed one does,
+            // then the tilde is contained in one of variables and should not be expanded
+            if !input.as_ref().starts_with("~") && s.starts_with("~") {
+                // return as is
+                s.into()
+            } else {
+                if let Cow::Owned(s) = tilde(&s) {
+                    s.into()
+                } else {
+                    s.into()
+                }
+            }
+        }
+    })
 }
 
 /// Represents a variable lookup error.
@@ -319,6 +327,15 @@ pub struct LookupError<E> {
     pub cause: E,
 }
 
+impl<E> LookupError<E> {
+    fn for_var(var_name: impl Into<String>) -> impl FnOnce(E) -> LookupError<E> {
+        |e| LookupError {
+            var_name: var_name.into(),
+            cause: e,
+        }
+    }
+}
+
 impl<E: fmt::Display> fmt::Display for LookupError<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
@@ -333,20 +350,6 @@ impl<E: Error + 'static> Error for LookupError<E> {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         Some(&self.cause)
     }
-}
-
-macro_rules! try_lookup {
-    ($name:expr, $e:expr) => {
-        match $e {
-            Ok(s) => s,
-            Err(e) => {
-                return Err(LookupError {
-                    var_name: $name.into(),
-                    cause: e,
-                })
-            }
-        }
-    };
 }
 
 fn is_valid_var_name_char(c: char) -> bool {
@@ -404,12 +407,6 @@ fn is_valid_var_name_char(c: char) -> bool {
 ///     "begin/a value/b values/end"
 /// );
 ///
-/// // Expand to a default value if the variable is not defined
-/// assert_eq!(
-///     shellexpand::env_with_context("begin/${UNSET_ENV:-42}/end", context).unwrap(),
-///     "begin/42/end"
-/// );
-///
 /// // Unknown variables are left as is
 /// assert_eq!(
 ///     shellexpand::env_with_context("begin/$UNKNOWN/end", context).unwrap(),
@@ -456,51 +453,20 @@ where
             if next_char == Some('{') {
                 match input_str.find('}') {
                     Some(closing_brace_idx) => {
-                        let mut default_value = None;
-
-                        // Search for the default split
-                        let var_name_end_idx = match input_str[..closing_brace_idx].find(":-") {
-                            // Only match if there's a variable name, ie. this is not valid ${:-value}
-                            Some(default_split_idx) if default_split_idx != 2 => {
-                                default_value =
-                                    Some(&input_str[default_split_idx + 2..closing_brace_idx]);
-                                default_split_idx
-                            }
-                            _ => closing_brace_idx,
-                        };
-
-                        let var_name = &input_str[2..var_name_end_idx];
-                        match context(var_name) {
-                            // if we have the variable set to some value
-                            Ok(Some(var_value)) => {
+                        let var_name = &input_str[2..closing_brace_idx];
+                        match context(var_name).map_err(LookupError::for_var(var_name))? {
+                            Some(var_value) => {
                                 result.push_str(var_value.as_ref());
                                 input_str = &input_str[closing_brace_idx + 1..];
                                 next_dollar_idx = find_dollar(input_str);
                             }
-
-                            // if the variable is set and empty or unset
-                            not_found_or_empty => {
-                                let value = match (not_found_or_empty, default_value) {
-                                    // return an error if we don't have a default and the variable is unset
-                                    (Err(err), None) => {
-                                        return Err(LookupError {
-                                            var_name: var_name.into(),
-                                            cause: err,
-                                        });
-                                    }
-                                    // use the default value if set
-                                    (_, Some(default)) => default,
-                                    // leave the variable as it is if the environment is empty
-                                    (_, None) => &input_str[..closing_brace_idx + 1],
-                                };
-
-                                result.push_str(value);
+                            None => {
+                                result.push_str(&input_str[..closing_brace_idx + 1]);
                                 input_str = &input_str[closing_brace_idx + 1..];
                                 next_dollar_idx = find_dollar(input_str);
                             }
                         }
                     }
-                    // unbalanced braces
                     None => {
                         result.push_str(&input_str[..2]);
                         input_str = &input_str[2..];
@@ -513,7 +479,7 @@ where
                     .unwrap_or(input_str.len() - 2);
 
                 let var_name = &input_str[1..end_idx];
-                match try_lookup!(var_name, context(var_name)) {
+                match context(var_name).map_err(LookupError::for_var(var_name))? {
                     Some(var_value) => {
                         result.push_str(var_value.as_ref());
                         input_str = &input_str[end_idx..];
@@ -680,7 +646,9 @@ where
                 input_str.into()
             }
         } else {
-            // we cannot handle `~otheruser/` paths yet
+            // `FnOnce() -> Option<P>` api does not allow for handling `~otheruser/` paths here.
+            // Would need to make breaking change to `FnOnce(username: Option<&str>) -> Option<P>`
+            // in order to handle it.
             input_str.into()
         }
     } else {
@@ -689,16 +657,14 @@ where
     }
 }
 
-/// Performs the tilde expansion using the default system context.
+/// Performs tilde expansion using the default system context.
 ///
-/// This function delegates to `tilde_with_context()`, using the default system source of home
-/// directory path, namely `dirs::home_dir()` function.
+/// Note: Unlike the `tilde_with_context` function, this function **does** support
+/// expansions such as ~anotheruser/directory (on linux, macos and the BSDs).
 ///
 /// # Examples
 ///
 /// ```
-/// extern crate dirs;
-///
 /// let hds = dirs::home_dir()
 ///     .map(|p| p.display().to_string())
 ///     .unwrap_or_else(|| "~".to_owned());
@@ -708,19 +674,56 @@ where
 ///     format!("{}/some/dir", hds)
 /// );
 /// ```
-#[inline]
 pub fn tilde<SI: ?Sized>(input: &SI) -> Cow<str>
 where
     SI: AsRef<str>,
 {
-    tilde_with_context(input, dirs::home_dir)
+    let input_str = input.as_ref();
+    if !input_str.starts_with("~") {
+        return input_str.into();
+    }
+    let input_after_tilde = &input_str[1..];
+
+    // Pull out the username from `input_after_tilde`, if any. In the case of `~`, the username
+    // should be `None`. In the case of `~otheruser`, the username should be `Some("otheruser")`.
+    let (username, remainder) =
+        if input_after_tilde.is_empty() || input_after_tilde.starts_with("/") {
+            // '~' case...
+            (None, input_after_tilde)
+        } else {
+            // `~otheruser` case...
+
+            // We would like to pull out the username as a `&str`. We know the start of
+            // username is byte index 0 of `input_after_tilde`. Let's find the byte index
+            // of `input_after_tilde` where username ends ... in a way that is careful to
+            // account for any utf8 byte boundary issues.
+            let byte_index = input_after_tilde
+                // Get an iterator over the byte indices and characters of `input_after_tilde`
+                .char_indices()
+                // Find the byte index of of the first `/`
+                .find(|(_byte_index, c)| *c == '/')
+                // Throw away the character because we don't need it (we know it's `/`)
+                .map(|(byte_index, _c)| byte_index)
+                // If we did not find a `/` that means the end of the username
+                // is the end of `input_after_tilde`.
+                .unwrap_or_else(|| input_after_tilde.as_bytes().len());
+            // Using `byte_index`, split `input_after_tilde` into
+            // the username and the remainder of the path.
+            let (username, remainder) = input_after_tilde.split_at(byte_index);
+            (Some(username), remainder)
+        };
+
+    match crate::home_dir::home_dir(username) {
+        Ok(hd) => format!("{}{}", hd.display(), remainder).into(),
+        Err(_) => input_str.into(),
+    }
 }
 
 #[cfg(test)]
 mod tilde_tests {
     use std::path::{Path, PathBuf};
 
-    use super::{tilde, tilde_with_context};
+    use super::{home_dir, tilde, tilde_with_context};
 
     #[test]
     fn test_with_tilde_no_hd() {
@@ -750,10 +753,34 @@ mod tilde_tests {
 
     #[test]
     fn test_global_tilde() {
-        match dirs::home_dir() {
+        match home_dir::home_dir(None).ok() {
             Some(hd) => assert_eq!(tilde("~/something"), format!("{}/something", hd.display())),
             None => assert_eq!(tilde("~/something"), "~/something"),
         }
+    }
+
+    #[test]
+    #[cfg(any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "linux",
+        target_os = "netbsd",
+        target_os = "openbsd",
+    ))]
+    fn test_tilde_otheruser() {
+        // Note: For this test to work, the system needs to have a root user
+        // whose home directory is located at `/root`, which is the case for
+        // most, but perhaps not all, *nix systems. If your system does not meet
+        // this requirement, disable this test by annotating it with `#[ignore]`
+        assert_eq!(tilde("~root"), "/root");
+        assert_eq!(tilde("~root/something"), "/root/something");
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_tilde_otheruser() {
+        assert_eq!(tilde("~root"), "/var/root");
+        assert_eq!(tilde("~root/something"), "/var/root/something");
     }
 }
 
@@ -872,18 +899,6 @@ mod env_test {
             "/whatever${VAR}${VAR}" => "/whatevervaluevalue",
             "${VAR} ${VAR}" => "value value",
             "${VAR}$VAR" => "valuevalue",
-
-            // default values
-            "/answer/${UNKNOWN:-42}" => "/answer/42",
-            "/answer/${:-42}" => "/answer/${:-42}",
-            "/whatever/${UNKNOWN:-other}$VAR" => "/whatever/othervalue",
-            "/whatever/${UNKNOWN:-other}/$VAR" => "/whatever/other/value",
-            ":-/whatever/${UNKNOWN:-other}/$VAR :-" => ":-/whatever/other/value :-",
-            "/whatever/${VAR:-other}" => "/whatever/value",
-            "/whatever/${VAR:-other}$VAR" => "/whatever/valuevalue",
-            "/whatever/${VAR} :-" => "/whatever/value :-",
-            "/whatever/${:-}" => "/whatever/${:-}",
-            "/whatever/${UNKNOWN:-}" => "/whatever/",
 
             // empty variable in various positions
             "${EMPTY}/whatever/path" => "/whatever/path",
