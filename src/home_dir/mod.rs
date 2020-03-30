@@ -69,8 +69,9 @@ impl fmt::Display for HomeDirError {
         match &self.0 {
             NotFound(Some(user)) => write!(f, "Unable to find home directory for user {}", user),
             NotFound(None) => write!(f, "Unable to find home directory for current user"),
-            OS(Some(msg)) => write!(f, "libc error while looking up home directory: {}", msg),
-            OS(None) => write!(f, "libc error while looking up home directory"),
+            OS(Some(msg)) => write!(f, "OS error while looking up home directory: {}", msg),
+            OS(None) => write!(f, "OS error while looking up home directory"),
+            PermissionDenied(user) => write!(f, "Permission denied. Reading home directory of {} requires elevated priviliges.", user),
             Unimplemented => write!(f, "Identifying the home directory of a user other than the current user is not yet implemented for this platform"),
         }
     }
@@ -91,6 +92,8 @@ pub(crate) enum HomeDirErrorKind {
     NotFound(Option<String>),
     #[allow(unused)]
     OS(Option<String>),
+    #[allow(unused)]
+    PermissionDenied(String),
     #[allow(unused)]
     Unimplemented,
 }

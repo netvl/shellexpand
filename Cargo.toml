@@ -20,7 +20,7 @@ libc = { version = "0.2", optional = true }
 redox_users = "0.3"
 
 [target.'cfg(windows)'.dependencies]
-winapi = "0.3"
+winapi = { version = "0.3", features = ["errhandlingapi", "handleapi", "psapi", "securitybaseapi", "userenv"] }
 
 [features]
 default = ["libc"]
