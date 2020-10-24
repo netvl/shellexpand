@@ -10,5 +10,4 @@ readme = "Readme.md"
 keywords = ["strings", "shell", "variables"]
 
 [dependencies]
-dirs = "2.0"
-
+dirs-next = "2.0"
