@@ -1,10 +1,13 @@
 shellexpand, a library for shell-like expansion in strings
 ==========================================================
 
-[![Build Status][travis]](https://travis-ci.org/netvl/shellexpand) [![crates.io][crates]](https://crates.io/crates/shellexpand)
+[![Build Status][actions]](https://github.com/netvl/xml-rs/actions?query=workflow%3ACI)
+[![crates.io][crates]](https://crates.io/crates/shellexpand)
+[![docs][docs]](https://docs.rs/shellexpand)
 
-  [travis]: https://img.shields.io/travis/netvl/shellexpand.svg?style=flat-square
+  [actions]: https://img.shields.io/github/workflow/status/netvl/shellexpand/CI/master?style=flat-square
   [crates]: https://img.shields.io/crates/v/shellexpand.svg?style=flat-square
+  [docs]: https://img.shields.io/badge/docs-latest%20release-6495ed.svg?style=flat-square
 
 [Documentation](https://docs.rs/shellexpand/)
 
@@ -16,13 +19,18 @@ This crate provides generic functions which accept arbitrary contexts as well as
 functions which perform expansions using the system-wide context (represented by functions from `std::env`
 module and [dirs](https://crates.io/crates/dirs) crate).
 
+---
+**Note: because I no longer have capacity to support it, I'm now looking for a new maintainer for this library.
+Until I'm able to find one, it is unlikely to receive new updates in any reasonably timely manner.**
+---
+
 ## Usage
 
 Just add a dependency in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-shellexpand = "1.1.1"
+shellexpand = "2.1"
 ```
 
 See the crate documentation (a link is present in the beginning of this readme) for more information
@@ -30,6 +38,11 @@ and examples.
 
 
 ## Changelog
+
+### Version 2.1.0
+
+* Switched to `dirs-next` instead of the obsolete `dirs` as the underlying dependency used to resolve the home directory
+* Switched to GitHub Actions instead of Travis CI for building the project.
 
 ### Version 2.0.0
 
