@@ -1,7 +1,7 @@
 shellexpand, a library for shell-like expansion in strings
 ==========================================================
 
-[![Build Status][actions]](https://github.com/netvl/xml-rs/actions?query=workflow%3ACI)
+[![Build Status][actions]](https://github.com/netvl/shellexpand/actions?query=workflow%3ACI)
 [![crates.io][crates]](https://crates.io/crates/shellexpand)
 [![docs][docs]](https://docs.rs/shellexpand)
 
