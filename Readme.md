@@ -20,8 +20,10 @@ functions which perform expansions using the system-wide context (represented by
 module and [dirs](https://crates.io/crates/dirs) crate).
 
 ---
+
 **Note: because I no longer have capacity to support it, I'm now looking for a new maintainer for this library.
 Until I'm able to find one, it is unlikely to receive new updates in any reasonably timely manner.**
+
 ---
 
 ## Usage
