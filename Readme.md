@@ -17,7 +17,7 @@ that is, to expand variables like `$A` or `${B}` into their values inside some c
 
 This crate provides generic functions which accept arbitrary contexts as well as default, system-based
 functions which perform expansions using the system-wide context (represented by functions from `std::env`
-module and [dirs](https://crates.io/crates/dirs) crate).
+module and [dirs-next](https://crates.io/crates/dirs-next) crate).
 
 ---
 
