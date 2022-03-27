@@ -765,12 +765,10 @@ pub mod with_path {
         // "starts_with" on a Path only returns true if the full component matches
         // this means "~" & "~/" matches
         // where "~user" & "~user/" dont match
-        if input_path.starts_with("~") {
+
+        // "strip_prefix" is directly used as per clippy suggestion, because it internally uses "strip_prefix" and so does not need to be called twice
+        if let Ok(input_after_tilde) = input_path.strip_prefix("~") {
             // "strip_prefix" on a Path strips not just "~" but the whole component "~/", so a extra check for "empty or starts_with(/)" becomes unnecessary
-            let input_after_tilde = match input_path.strip_prefix("~") {
-                Ok(v) => v,
-                Err(_) => return input_path.into(),
-            };
             if let Some(hd) = home_dir() {
                 let result = hd.as_ref().join(input_after_tilde);
                 result.into()
