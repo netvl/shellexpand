@@ -740,8 +740,8 @@ pub mod with_path {
     /// reference to which can be converted to a `Path` via `AsRef<Path>`. For example, `P` may be
     /// [`Path`], [`std::path::PathBuf`] or [`Cow<Path>`], which gives a lot of flexibility.
     ///
-    /// If you need to expand the tilde into the actual user home directory, you can use [`tilde`] or
-    /// [`super::full`] functions.
+    /// If you need to expand the tilde into the actual user home directory, you can use [`tilde()`] or
+    /// [`super::full()`] functions.
     ///
     /// # Examples
     ///
@@ -787,8 +787,8 @@ pub mod with_path {
 
     /// Performs the tilde expansion using the default system context, where the input and output is something that resolves to [`Path`].
     ///
-    /// This function delegates to [`tilde_with_context`], using the default system source of home
-    /// directory path, namely [`dirs::home_dir`] function.
+    /// This function delegates to [`tilde_with_context()`], using the default system source of home
+    /// directory path, namely [`dirs::home_dir()`] function.
     ///
     /// # Examples
     ///
