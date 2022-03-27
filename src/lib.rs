@@ -178,7 +178,7 @@ where
         Cow::Owned(s) => {
             // if the original string does not start with a tilde but the processed one does,
             // then the tilde is contained in one of variables and should not be expanded
-            if !input.as_ref().starts_with("~") && s.starts_with("~") {
+            if !input.as_ref().starts_with('~') && s.starts_with('~') {
                 // return as is
                 s.into()
             } else if let Cow::Owned(s) = tilde_with_context(&s, home_dir) {
@@ -524,7 +524,7 @@ where
                     }
                 }
             } else {
-                result.push_str("$");
+                result.push('$');
                 input_str = if next_char == Some('$') {
                     &input_str[2..] // skip the next dollar for escaping
                 } else {
@@ -667,8 +667,8 @@ where
     HD: FnOnce() -> Option<P>,
 {
     let input_str = input.as_ref();
-    if let Some(input_after_tilde) = input_str.strip_prefix("~") {
-        if input_after_tilde.is_empty() || input_after_tilde.starts_with("/") {
+    if let Some(input_after_tilde) = input_str.strip_prefix('~') {
+        if input_after_tilde.is_empty() || input_after_tilde.starts_with('/') {
             if let Some(hd) = home_dir() {
                 let result = format!("{}{}", hd.as_ref().display(), input_after_tilde);
                 result.into()
