@@ -670,7 +670,10 @@ where
 {
     let input_str = input.as_ref();
     if input_str.starts_with("~") {
-        let input_after_tilde = &input_str[1..];
+        let input_after_tilde = match input_str.strip_prefix("~") {
+            Some(v) => v,
+            None => return input_str.into()
+        };
         if input_after_tilde.is_empty() || input_after_tilde.starts_with("/") {
             if let Some(hd) = home_dir() {
                 let result = format!("{}{}", hd.as_ref().display(), input_after_tilde);
