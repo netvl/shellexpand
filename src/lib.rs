@@ -650,7 +650,7 @@ where
 /// If you need to expand the tilde into the actual user home directory, you can use `tilde()` or
 /// `full()` functions.
 /// 
-/// For a Function that accepts and returns a [`Path`] instead, look at [`with_path::tilde_with_context`].
+/// For a Function that accepts and returns a [`Path`] instead, look at [`with_path::tilde_with_context()`].
 ///
 /// # Examples
 ///
@@ -696,7 +696,7 @@ where
 /// This function delegates to `tilde_with_context()`, using the default system source of home
 /// directory path, namely `dirs::home_dir()` function.
 /// 
-/// For a Function that accepts and returns a [`Path`] instead, look at [`with_path::tilde`].
+/// For a Function that accepts and returns a [`Path`] instead, look at [`with_path::tilde()`].
 ///
 /// # Examples
 ///
