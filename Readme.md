@@ -1,6 +1,14 @@
 shellexpand, a library for shell-like expansion in strings
 ==========================================================
 
+---
+
+**Note: this repository is not maintained. Please check out https://gitlab.com/ijackson/rust-shellexpand
+as this is where all of the development happens. The crate identifier, `shellexpand`, now points to
+that repository.**
+
+---
+
 [![Build Status][actions]](https://github.com/netvl/shellexpand/actions?query=workflow%3ACI)
 [![crates.io][crates]](https://crates.io/crates/shellexpand)
 [![docs][docs]](https://docs.rs/shellexpand)
@@ -18,13 +26,6 @@ that is, to expand variables like `$A` or `${B}` into their values inside some c
 This crate provides generic functions which accept arbitrary contexts as well as default, system-based
 functions which perform expansions using the system-wide context (represented by functions from `std::env`
 module and [dirs-next](https://crates.io/crates/dirs-next) crate).
-
----
-
-**Note: because I no longer have capacity to support it, I'm now looking for a new maintainer for this library.
-Until I'm able to find one, it is unlikely to receive new updates in any reasonably timely manner.**
-
----
 
 ## Usage
 
