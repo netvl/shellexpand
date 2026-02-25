@@ -4,8 +4,8 @@ shellexpand, a library for shell-like expansion in strings
 ---
 
 **Note: this repository is not maintained. Please check out https://gitlab.com/ijackson/rust-shellexpand
-as this is where all of the development happens. The crate identifier, `shellexpand`, now points to
-that repository.**
+as this is where all of the development happens. The crate identifier on https://crates.io, `shellexpand`,
+now points to that repository.**
 
 ---
 
