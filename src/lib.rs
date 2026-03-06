@@ -649,6 +649,8 @@ where
 ///
 /// If you need to expand the tilde into the actual user home directory, you can use `tilde()` or
 /// `full()` functions.
+/// 
+/// For a Function that accepts and returns a [`Path`] instead, look at [`with_path::tilde_with_context()`].
 ///
 /// # Examples
 ///
@@ -693,6 +695,8 @@ where
 ///
 /// This function delegates to `tilde_with_context()`, using the default system source of home
 /// directory path, namely `dirs::home_dir()` function.
+/// 
+/// For a Function that accepts and returns a [`Path`] instead, look at [`with_path::tilde()`].
 ///
 /// # Examples
 ///
@@ -714,6 +718,175 @@ where
     SI: AsRef<str>,
 {
     tilde_with_context(input, dirs::home_dir)
+}
+
+pub mod with_path {
+    use std::borrow::Cow;
+    use std::path::{Path};
+
+    /// Performs the tilde expansion using the provided context, where the input and output is something that resolves to [`Path`].
+    ///
+    /// This function expands tilde (`~`) character in the beginning of the input into contents
+    /// of the path returned by `home_dir` function. If the input string does not contain a tilde, or
+    /// if it is not followed either by a slash (`/`) or by the end of the path, then it is also left as
+    /// is. This means, in particular, that expansions like `~anotheruser/directory` are not supported.
+    /// The context function may also return a `None`, in that case even if the tilde is present in the
+    /// input in the correct place, it won't be replaced (there is nothing to replace it with, after
+    /// all).
+    ///
+    /// This function has three generic type parameters: `SI` represents the input Path, `P` is the
+    /// output of a context lookup, and `HD` is the context closure. `SI` must be a type, a reference
+    /// to which can be converted to a Path slice via `AsRef<Path>`, and `P` must be a type, a
+    /// reference to which can be converted to a `Path` via `AsRef<Path>`. For example, `P` may be
+    /// [`Path`], [`std::path::PathBuf`] or [`Cow<Path>`], which gives a lot of flexibility.
+    ///
+    /// If you need to expand the tilde into the actual user home directory, you can use [`tilde()`] or
+    /// [`super::full()`] functions.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::path::{PathBuf, Path};
+    ///
+    /// fn home_dir() -> Option<PathBuf> { Some(Path::new("/home/user").into()) }
+    ///
+    /// assert_eq!(
+    ///    shellexpand::with_path::tilde_with_context("~/some/dir", home_dir),
+    ///    Path::new("/home/user/some/dir")
+    /// );
+    /// ```
+    pub fn tilde_with_context<SI: ?Sized, P, HD>(input: &SI, home_dir: HD) -> Cow<Path>
+    where
+        SI: AsRef<Path>,
+        P: AsRef<Path>,
+        HD: FnOnce() -> Option<P>,
+    {
+        let input_path = input.as_ref();
+        // "starts_with" on a Path only returns true if the full component matches
+        // this means "~" & "~/" matches
+        // where "~user" & "~user/" dont match
+
+        // "strip_prefix" is directly used as per clippy suggestion, because it internally uses "strip_prefix" and so does not need to be called twice
+        if let Ok(input_after_tilde) = input_path.strip_prefix("~") {
+            // "strip_prefix" on a Path strips not just "~" but the whole component "~/", so a extra check for "empty or starts_with(/)" becomes unnecessary
+            if let Some(hd) = home_dir() {
+                let result = hd.as_ref().join(input_after_tilde);
+                result.into()
+            } else {
+                // home dir is not available
+                input_path.into()
+            }
+        } else {
+            // input doesn't start with tilde
+            // OR starts with "~user/"
+            input_path.into()
+        }
+    }
+
+    /// Performs the tilde expansion using the default system context, where the input and output is something that resolves to [`Path`].
+    ///
+    /// This function delegates to [`tilde_with_context()`], using the default system source of home
+    /// directory path, namely [`dirs::home_dir()`] function.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// extern crate dirs_next as dirs;
+    /// use std::path::Path;
+    ///
+    /// let hds = dirs::home_dir()
+    ///     .unwrap_or_else(|| Path::new("~").to_owned());
+    ///
+    /// assert_eq!(
+    ///     shellexpand::with_path::tilde("~/some/dir"),
+    ///     hds.join("some/dir")
+    /// );
+    /// ```
+    #[inline]
+    pub fn tilde<SI: ?Sized>(input: &SI) -> Cow<Path>
+    where
+        SI: AsRef<Path>,
+    {
+        tilde_with_context(input, dirs::home_dir)
+    }
+
+    #[cfg(test)]
+    mod path_test {
+        use std::path::{Path, PathBuf};
+
+        use super::{tilde, tilde_with_context};
+
+        #[test]
+        fn test_context_with_no_hd() {
+            fn hd() -> Option<PathBuf> {
+                None
+            }
+
+            // test input as str
+            {
+                assert_eq!(tilde_with_context("whatever", hd), Path::new("whatever"));
+                assert_eq!(tilde_with_context("whatever/~", hd), Path::new("whatever/~"));
+                assert_eq!(tilde_with_context("~/whatever", hd), Path::new("~/whatever"));
+                assert_eq!(tilde_with_context("~", hd), Path::new("~"));
+                assert_eq!(tilde_with_context("~something", hd), Path::new("~something"));
+            }
+
+            // test input as Path
+            {
+                assert_eq!(tilde_with_context(Path::new("whatever"), hd), Path::new("whatever"));
+                assert_eq!(tilde_with_context(Path::new("whatever/~"), hd), Path::new("whatever/~"));
+                assert_eq!(tilde_with_context(Path::new("~/whatever"), hd), Path::new("~/whatever"));
+                assert_eq!(tilde_with_context(Path::new("~"), hd), Path::new("~"));
+                assert_eq!(tilde_with_context(Path::new("~something"), hd), Path::new("~something"));
+            }
+        }
+
+        #[test]
+        fn test_context_with_hd() {
+            fn hd() -> Option<PathBuf> {
+                Some(Path::new("/home/dir").to_owned())
+            }
+
+            // test input as str
+            {
+                assert_eq!(tilde_with_context("whatever/path", hd), Path::new("whatever/path"));
+                assert_eq!(tilde_with_context("whatever/~/path", hd), Path::new("whatever/~/path"));
+                assert_eq!(tilde_with_context("~", hd), Path::new("/home/dir"));
+                assert_eq!(tilde_with_context("~/path", hd), Path::new("/home/dir/path"));
+                assert_eq!(tilde_with_context("~whatever/path", hd), Path::new("~whatever/path"));
+            }
+
+            // test input as Path
+            {
+                assert_eq!(tilde_with_context(Path::new("whatever/path"), hd), Path::new("whatever/path"));
+                assert_eq!(tilde_with_context(Path::new("whatever/~/path"), hd), Path::new("whatever/~/path"));
+                assert_eq!(tilde_with_context(Path::new("~"), hd), Path::new("/home/dir"));
+                assert_eq!(tilde_with_context(Path::new("~/path"), hd), Path::new("/home/dir/path"));
+                assert_eq!(tilde_with_context(Path::new("~whatever/path"), hd), Path::new("~whatever/path"));
+            }
+        }
+
+        #[test]
+        fn test_tilde() {
+            // test input as str
+            {
+                match dirs::home_dir() {
+                    // Note: dont join with "absolute" paths like "/something", this would replace the previous path
+                    Some(hd) => assert_eq!(tilde("~/something"), hd.join("something")),
+                    None => assert_eq!(tilde("~/something"), Path::new("~/something")),
+                }
+            }
+
+            // test input as Path
+            {
+                match dirs::home_dir() {
+                    // Note: dont join with "absolute" paths like "/something", this would replace the previous path
+                    Some(hd) => assert_eq!(tilde(Path::new("~/something")), hd.join("something")),
+                    None => assert_eq!(tilde(Path::new("~/something")), Path::new("~/something")),
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
